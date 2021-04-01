@@ -550,7 +550,3 @@ def fix_coutout_lineendings(cutout: CutoutElem, contours: PageContours, line_id 
 
 
 
-
-
-
-

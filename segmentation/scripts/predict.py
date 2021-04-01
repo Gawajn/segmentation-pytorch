@@ -82,20 +82,22 @@ class Predictor:
                 p_map = self.ensemble.predict_image(scaled_image)
                 baselines = extract_baselines_from_probability_map(p_map, process_pool=process_pool)
 
-            if baselines is not None:
-                binary = scaled_image.binarized()
-                with PerformanceCounter(function_name="Baseline Height Calculation mp"):
-                    out = get_top_of_baselines(baselines, image=1 - binary,
-                                               process_pool=None)  # No MP is faster here (avoid image copy)
-                heights = [x[2] for x in out]
-                med_height = np.median(heights)
+            with PerformanceCounter(function_name="Line height adjustment calculation"):
+                if self.settings.max_line_height or self.settings.min_line_height and scale_factor_multiplier == 1:
+                    if baselines is not None:
+                        binary = scaled_image.binarized()
 
-                if (self.settings.max_line_height is not None and med_height > self.settings.max_line_height) \
-                        or (self.settings.min_line_height is not None and med_height < self.settings.min_line_height) \
-                        and scale_factor_multiplier == 1:
-                    scale_factor_multiplier = (self.settings.max_line_height - 7) / med_height
-                    logger.info("Resizing image Avg:{}, Med:{} \n".format(np.mean(heights), med_height))
-                    continue
+                        out = get_top_of_baselines(baselines, image=1 - binary,
+                                                   process_pool=None)  # No MP is faster here (avoid image copy)
+                        heights = [x[2] for x in out]
+                        med_height = np.median(heights)
+
+                        if (self.settings.max_line_height is not None and med_height > self.settings.max_line_height) \
+                                or (self.settings.min_line_height is not None and med_height < self.settings.min_line_height) \
+                                and scale_factor_multiplier == 1:
+                            scale_factor_multiplier = (self.settings.max_line_height - 7) / med_height
+                            logger.info("Resizing image Avg:{}, Med:{} \n".format(np.mean(heights), med_height))
+                            continue
             break
 
         # simplify the baselines
@@ -154,11 +156,6 @@ def two_step_file_func(data):
     args, prediction, file = data
     source_image = SourceImage.load(file)
     scaled_image = source_image.scaled(prediction.prediction_scale_factor)
-
-    if args.export_path:
-        bname_json = os.path.splitext(os.path.basename(file))[0] + ".blp.json"
-        with open(os.path.join(args.export_path, bname_json), "w") as f:
-            f.write(prediction.to_json())
 
     scale_factor = prediction.prediction_scale_factor
 
@@ -244,6 +241,10 @@ def main():
 
                 prediction, _ = nn_predictor.predict_image(source_image, process_pool=pool)
                 predictions.append(prediction)
+                if args.export_path:
+                    bname_json = os.path.splitext(os.path.basename(file))[0] + ".blp.json"
+                    with open(os.path.join(args.export_path, bname_json), "w") as f:
+                        f.write(prediction.to_json())
 
             data = [(args, pred, file) for pred, file in zip(predictions, files)]
 
