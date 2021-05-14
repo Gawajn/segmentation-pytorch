@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import dataclass, field
 
 from PIL import ImageDraw
@@ -20,10 +21,57 @@ class LabeledLine:
     points: LinePoints
     label: int
 
+class AboveBelowDistFinderAcc:
+    def __init__(self, dist_above: np.ndarray, dist_below: np.ndarray):
+        self.above = dist_above
+        self.below = dist_below
+        self.max_h = self.above.shape[0] - 1
+
+    def loc_above(self, x, y):
+        if y <= 1:
+            return -1
+        else:
+            return y - int(self.above[y,x])
+
+    def loc_below(self, x, y):
+        if y >= self.max_h:
+            return y + 2
+        else:
+            return y + int(self.below[y,x])
+
+    @staticmethod
+    def plot_lines(lines: List[LabeledLine], target: np.ndarray, val):
+        if len(lines) > 0:
+            xs,ys = zip(*itertools.chain.from_iterable(make_baseline_continous(bl.points) for bl in lines))
+            target[ys, xs] = val
+
+    @classmethod
+    def from_lines(cls, lines: List[LabeledLine], img_shape: Tuple[int,int]) -> 'AboveBelowDistFinderAcc':
+        assert img_shape[0] < 65000
+        assert img_shape[1] < 65000
+        ARRAY_DTYPE = np.uint16
+        SENTINEL = ARRAY_DTYPE(1)
+        dist_image_above = np.full(fill_value=SENTINEL, shape=img_shape, dtype=ARRAY_DTYPE)
+        cls.plot_lines(lines, dist_image_above, np.uint16(0))
+        dist_image_below = dist_image_above.copy()
+
+        # fix the first line... we need 1's everywhere, except for the points where the baselines are
+        # dist_image_above[0,:] = np.where(dist_image_above[0,:] == 0, np.uint16(0), np.uint16(1))
+        for y in range(1, img_shape[0]):
+            dist_image_above[y,:] *= (dist_image_above[y-1,:] + 1)
+
+        for y in range(img_shape[0]-2,-1,-1):
+            dist_image_below[y, :] *= (dist_image_below[y+1, :] + 1)
+
+        #show_images([dist_image_above, dist_image_below],["above", "below"])
+        return cls(dist_image_above, dist_image_below)
+
+
 class LabeledLineNFindAcc:
     def __init__(self, lines: List[LabeledLine], dist_image: np.ndarray):
         self.lines = lines
         self.dist_image = dist_image
+        self.above_below_acc = AboveBelowDistFinderAcc.from_lines(lines, dist_image.shape)
 
     @staticmethod
     def from_lines(lines: List[LinePoints], image_w: int, image_h: int):
@@ -34,10 +82,100 @@ class LabeledLineNFindAcc:
             bl_c = make_baseline_continous(bl)
             for x, y in bl_c:
                 dist_image[y,x] = i
+
+
         return LabeledLineNFindAcc(labeled_lines, dist_image)
 
     def find_first_below(self, x: int, y: int) -> Tuple[LabeledLine, Tuple[int, int]]:
         labeled: np.ndarray = self.dist_image
+        loc = self.above_below_acc.loc_below(x,y)
+        if loc > self.dist_image.shape[0]:
+            return None, None
+        else:
+            return self.lines[int(labeled[loc, x]) - 1], (x, loc)
+
+    def find_first_above(self, x: int, y: int) -> Tuple[LabeledLine, Tuple[int, int]]:
+        labeled: np.ndarray = self.dist_image
+        loc = self.above_below_acc.loc_above(x,y)
+        if loc < 0:
+            return None,None
+        else:
+            return self.lines[int(labeled[loc,x]) -1], (x,loc)
+
+    def find_baselines_above(self, bl: LabeledLine, max_sep: int) -> List[LabeledLine]:
+        above_labels = set()
+        for x,y in bl.points:
+            fbl, pos = self.find_first_above(x,y)
+            if fbl and abs(y - pos[1]) <= max_sep:
+                above_labels.add(fbl.label)
+                continue # we do not want to add this baseline multiple times
+        return [self.lines[i-1] for i in above_labels]
+
+    def find_baselines_below(self, bl: LabeledLine, max_sep: int) -> List[LabeledLine]:
+        below_labels = set()
+        for x, y in bl.points:
+            fbl, pos = self.find_first_below(x, y)
+            if fbl and abs(y - pos[1]) <= max_sep:
+                below_labels.add(fbl.label)
+                continue # dont add baseline multiple times
+        return [self.lines[i-1] for i in below_labels]
+
+    def get_top_sensitive(self, baseline: List[Tuple[int,int]], inverted_binary, threshold=0.2, max_steps=None, disable_now=False) -> MovedBaselineTop:
+        if max_steps is None:
+            max_steps = int(inverted_binary.shape[0])
+        x, y = zip(*baseline)
+        indices = (np.array(y), np.array(x))
+        max_black_pixels = 0
+        height = 0
+        for i in range(min(np.min(indices[0]), max_steps)):  # do at most min_height steps, so that min(y) == 0
+            indices = (indices[0] - 1, indices[1])
+            # if we hit another baseline, or if we are too high, abort!
+            if np.any(self.dist_image[indices[0],indices[1]] != 0) or \
+                    np.min(indices[0]) == 0:
+                height = height + 1
+                return MovedBaselineTop(baseline, list(zip(indices[1].tolist(), indices[0].tolist())), height)
+            now = np.sum(inverted_binary[indices])
+            if (max_black_pixels * threshold > now or (now <= 5 and not disable_now)) and height > 5:
+                break
+            height = height + 1
+            max_black_pixels = now if now > max_black_pixels else max_black_pixels
+        return MovedBaselineTop(baseline, list(zip(indices[1].tolist(), indices[0].tolist())), height)
+
+class LabeledLineNFindAccOld:
+    def __init__(self, lines: List[LabeledLine], dist_image: np.ndarray):
+        self.lines = lines
+        self.dist_image = dist_image
+        self.above_below_acc = AboveBelowDistFinderAcc.from_lines(lines)
+
+    @staticmethod
+    def from_lines(lines: List[LinePoints], image_w: int, image_h: int):
+        dist_image = np.zeros(shape=(image_h, image_w),dtype=np.int32)
+        labeled_lines: List[LabeledLine] = []
+        for i, bl in enumerate(lines, start=1):
+            labeled_lines.append(LabeledLine(bl, i))
+            bl_c = make_baseline_continous(bl)
+            for x, y in bl_c:
+                dist_image[y,x] = i
+        AboveBelowDistFinderAcc.from_lines(labeled_lines, (image_h, image_w))
+
+        return LabeledLineNFindAcc(labeled_lines, dist_image)
+
+    def find_first_below(self, x: int, y: int) -> Tuple[LabeledLine, Tuple[int, int]]:
+        labeled: np.ndarray = self.dist_image
+        """
+        batch_size = 20
+        img_h = int(self.dist_image.shape[0])
+        cur = y+1
+        while cur < img_h:
+            if cur + batch_size < img_h:
+                if np.all(labeled[cur:cur+batch_size,x] == 0):
+                    cur += batch_size
+                    continue
+            if labeled[y, x] != 0:
+                return self.lines[labeled[y, x] - 1], (x, y)
+            cur += 1
+        """
+
         # look down starting from y+1,x to find first baseline and return that line and the intersection point
         for y in range(y+1, self.dist_image.shape[0]):
             if labeled[y,x] != 0:
@@ -46,7 +184,20 @@ class LabeledLineNFindAcc:
 
     def find_first_above(self, x: int, y: int) -> Tuple[LabeledLine, Tuple[int, int]]:
         labeled: np.ndarray = self.dist_image
+        """
         # look down starting from y+1,x to find first baseline and return that line and the intersection point
+        batch_size = 20
+        cur = y - 1
+        while cur >= 0:
+            if cur > batch_size:
+                cp1 = cur + 1
+                if np.all(labeled[cp1 - batch_size : cp1, x] == 0):
+                    cur -= batch_size
+                    continue
+            if labeled[y, x] != 0:
+                return self.lines[labeled[y, x] - 1], (x, y)
+            cur -= 1
+        """
         for y in range(y -1, -1, -1):
             if labeled[y, x] != 0:
                 return self.lines[labeled[y, x] - 1], (x, y)
