@@ -25,9 +25,9 @@ from segmentation.preprocessing.source_image import SourceImage
 from segmentation.util import logger
 
 QueueElem = namedtuple("QueueElem", "f d point parent")
+
 # f is dist + heur, d is distance, n is node, p is parent
 
-seq_number = 0
 def extend_baselines(line_a: List, line_b: List) -> Tuple[List,List]:
     start_dif = line_b[0][0] - line_a[0][0]
     end_swap = False
@@ -88,9 +88,6 @@ class DividingPathStartConditions:
     starting_offset: int = None
     starting_cheaper_y: bool = True
 
-
-
-
 def find_dividing_path(inv_binary_img: np.ndarray, cut_above, cut_below, starting_bias = DividingPathStartingBias.MID, start_conditions: DividingPathStartConditions = None) -> List:
     # assert, that both cut_baseline is a list of lists and cut_topline is also a list of lists
     tl, bl = extend_baselines(cut_above, cut_below)
@@ -126,16 +123,20 @@ def find_dividing_path(inv_binary_img: np.ndarray, cut_above, cut_below, startin
         for y in range(y1,y2+1):
             yield (x + 1,y)
     """
+    tly = [x[1] for x in tl]
+    bly = [x[1] for x in bl]
     def find_children_rect(cur_node, x_start):
+        out = [] # using a list here is probably faster than a generator
         x = cur_node[0]
         y = cur_node[1]
         xi = x - x_start
-        y1, y2 = tl[xi][1], bl[xi][1]  # TODO: shouldn't this be +1 ?
+        y1, y2 = tly[xi], bly[xi]  # TODO: shouldn't this be +1 ?
         # if y1 > y2: y1, y2 = y2, y1
         # if tl[xi+1][1] <= y <= bl[xi+1][1]: yield (x+1,y)
-        if tl[xi + 1][1] <= y <= bl[xi + 1][1]: yield (x + 1, y)
-        if y > y1: yield (x, y-1)
-        if y < y2: yield (x, y+1)
+        if tly[xi + 1] <= y <= bly[xi + 1]: out.append((x + 1, y))
+        if y > y1: out.append ((x, y-1))
+        if y < y2: out.append( (x, y+1))
+        return out
 
     # use Dijkstra's algorithm to find the shortest dividing path
     # dummy start point
@@ -213,25 +214,16 @@ def find_dividing_path(inv_binary_img: np.ndarray, cut_above, cut_below, startin
             if shortest_found_dist[child] <= d:
                 continue  # we already found it
 
-            """
-            found = nodeset.get(child)
-            if found is None:
-                nodeset[child] = child
-            else:
-                child = found
-            """
-
             # is this path to this node shorter?
             shortest_found_dist[child] = d
-
 
             #h = H_fn(child)
             h = end_x - child[0]
 
             heapq.heappush(Q, QueueElem(f=h+d, d=d, point=child, parent=node))
     logger.error("Cannot run A*")
-    logger.error(f"Cut above: {cut_above}")
-    logger.error(f"Cut below: {cut_below}")
+    logger.error("Cut above: {}".format(cut_above))
+    logger.error("Cut below: {}".format(cut_below))
 
     # raise RuntimeError("Unreachable")
     # Just use the middle line, to avoid crashing
