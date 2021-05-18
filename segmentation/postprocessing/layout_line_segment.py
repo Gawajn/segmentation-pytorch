@@ -24,216 +24,10 @@ from segmentation.postprocessing.util import NewImageReconstructor
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.util import logger
 
-QueueElem = namedtuple("QueueElem", "f d point parent")
-
-# f is dist + heur, d is distance, n is node, p is parent
-
-def extend_baselines(line_a: List, line_b: List) -> Tuple[List,List]:
-    start_dif = line_b[0][0] - line_a[0][0]
-    end_swap = False
-    if start_dif < 0:
-        start_dif = -start_dif
-        end_swap = not end_swap
-        line_a, line_b = line_b, line_a
-
-    if start_dif > 0: # line_a is longer, extend line_b
-        y = line_b[0][1]
-        x_start = line_b[0][0] - start_dif
-        line_b = [(x_start + i ,y) for i in range(start_dif)] + line_b
-
-
-
-    end_dif = line_b[-1][0] - line_a[-1][0]
-    if end_dif < 0:
-        end_dif = -end_dif
-        end_swap = not end_swap
-        line_a, line_b = line_b, line_a
-
-    if end_dif > 0: # line_b is longer, extend line a
-        end_y = line_a[-1][1]
-        end_start_x = line_a[-1][0]
-        line_a = line_a + [(end_start_x + i + 1, end_y) for i in range(end_dif)]
-
-    if end_swap:
-        line_a, line_b = line_b, line_a
-
-    if not (line_a[0][0] == line_b[0][0] and line_a[-1][0] == line_b[-1][0]):
-        line_a_r = list(reversed(line_a))
-        line_b_r = list(reversed(line_b))
-        raise RuntimeError("oops")
-    return line_a, line_b
-
-def make_path(target_node:QueueElem, start_node: QueueElem) -> List:
-    path_reversed = []
-    node = target_node
-    while node != start_node:
-        #print(node.f, node.d, node.point)
-        path_reversed.append(node.point)
-        # if we are on home position, no need to move vertically
-        if node.point[0] == start_node.point[0] + 1:
-            break
-        node = node.parent
-    return list(reversed(path_reversed))
-
-
-class DividingPathStartingBias(Enum):
-    MID = 0
-    TOP = 1
-    BOTTOM = 2
-    OFFSET = 3
-
-@dataclass
-class DividingPathStartConditions:
-    starting_bias: DividingPathStartingBias = DividingPathStartingBias.MID
-    starting_offset: int = None
-    starting_cheaper_y: bool = True
-
-def find_dividing_path(inv_binary_img: np.ndarray, cut_above, cut_below, starting_bias = DividingPathStartingBias.MID, start_conditions: DividingPathStartConditions = None) -> List:
-    # assert, that both cut_baseline is a list of lists and cut_topline is also a list of lists
-    tl, bl = extend_baselines(cut_above, cut_below)
-
-    # deep copy the lines to avoid breaking stuff with the corridoor adjustment
-    tl = [(p[0],p[1]) for p in tl]
-    bl = [(p[0], p[1]) for p in bl]
-
-
-    # see if there is a corridor, if not, push top baseline up by 1 px
-    min_channel = 3
-    for x, points in enumerate(zip(tl,bl)):
-        p1, p2 = points
-        if p1[1] > p2[1]:
-            tl[x], bl[x] = bl[x],tl[x]
-            p1, p2 = tl[x], bl[x]
-
-        if abs(p1[1] - p2[1]) <= min_channel:
-            if tl[x][1] > min_channel:
-                tl[x] = (tl[x][0], tl[x][1] - min_channel)
-            elif bl[x][1] + min_channel < inv_binary_img.shape[0]:
-                bl[x] = (bl[x][0], bl[x][1] + min_channel)
-            else:
-                assert False, "Unlucky"
-
-    """
-    def find_children(cur_node, x_start):
-        x = cur_node[0]
-        xi = x - x_start
-        y1, y2 = tl[xi][1], bl[xi][1] # TODO: shouldn't this be +1 ?
-        if y1 > y2: y1, y2 = y2, y1
-        #for y in range(max(tl[xi][1], cur_node[1] - 1), min(cur_node[1]+2, bl[xi][1] + 1)):
-        for y in range(y1,y2+1):
-            yield (x + 1,y)
-    """
-    tly = [x[1] for x in tl]
-    bly = [x[1] for x in bl]
-    def find_children_rect(cur_node, x_start):
-        out = [] # using a list here is probably faster than a generator
-        x = cur_node[0]
-        y = cur_node[1]
-        xi = x - x_start
-        y1, y2 = tly[xi], bly[xi]  # TODO: shouldn't this be +1 ?
-        # if y1 > y2: y1, y2 = y2, y1
-        # if tl[xi+1][1] <= y <= bl[xi+1][1]: yield (x+1,y)
-        if tly[xi + 1] <= y <= bly[xi + 1]: out.append((x + 1, y))
-        if y > y1: out.append ((x, y-1))
-        if y < y2: out.append( (x, y+1))
-        return out
-
-    # use Dijkstra's algorithm to find the shortest dividing path
-    # dummy start point
-
-    end_x = int(bl[-1][0])
-    assert end_x == int(tl[-1][0]) and end_x == int(bl[-1][0])
-
-    # adjust the constant factor for different cutting behaviours
-    def dist_fn(p1,p2):
-        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1]) + int(inv_binary_img[p2[1],p2[0]]) * 1000
-        # return 1+ abs( p2[1] - p1[1]) + int(inv_binary_img[p2[1],p2[0]]) * 1000
-        # bottom one is ~ 4% faster
-
-    def cheaper_y_dist_fn(p1,p2):
-        return abs(p1[0] - p2[0]) + 0.5 * abs(p1[1] - p2[1]) + int(inv_binary_img[p2[1], p2[0]]) * 1000
-
-
-    def H_fn(p):
-        return end_x - p[0]
-    #H_fn = lambda p: end_x - p[0]
-    #nodeset = dict()
-    if starting_bias == DividingPathStartingBias.MID:
-        start_point = (bl[0][0] - 1, int(abs(bl[0][1] + tl[0][1]) / 2))
-    elif starting_bias == DividingPathStartingBias.TOP:
-        start_point = (bl[0][0] - 1, tl[0][1] + 1)
-    elif starting_bias == DividingPathStartingBias.BOTTOM:
-        start_point = (bl[0][0] - 1, bl[0][1] - 1)
-    else:
-        raise NotImplementedError()
-    start_x = bl[0][0] # start_point[0] + 1
-
-    y1, y2 = tl[0][1], bl[0][1]+ 1
-    if y1 > y2: y1, y2 = y2,y1
-    source_points = [(start_x, y) for y in range(y1, y2)]
-
-    start_elem = QueueElem(0, 0, start_point, None)
-    Q: List[QueueElem] = []
-
-    if start_conditions and start_conditions.starting_cheaper_y:
-        for p in source_points:
-            heapq.heappush(Q,QueueElem(d=cheaper_y_dist_fn(start_point, p), f=cheaper_y_dist_fn(start_point,p) + H_fn(p),point=p,parent=start_elem))
-    else: # default behaviour
-        for p in source_points:
-            heapq.heappush(Q,QueueElem(d=dist_fn(start_point, p), f=dist_fn(start_point,p) + H_fn(p),point=p,parent=start_elem))
-
-    #distance = defaultdict(lambda: 2147483647)
-    visited = set()
-    shortest_found_dist = defaultdict(lambda: 2147483647)
-    for elem in Q:
-        shortest_found_dist[elem.point] = elem.d
-    while len(Q) > 0:
-        node = heapq.heappop(Q)
-        if node.point in visited: continue # if we already visited this node
-        visited.add(node.point)
-        if node.point[0] == end_x:
-            path = make_path(node, start_elem)
-            if False:
-                dd = DebugDraw(SourceImage.from_numpy(np.array(255*(1 - inv_binary_img),dtype=np.uint8)))
-                dd.draw_baselines([tl, bl, path])
-                img = dd.image()
-                #global seq_number
-                #img.save(f"/tmp/seq{seq_number}.png")
-                #seq_number += 1
-                #dd.show()
-            return path
-        for child in find_children_rect(node.point, start_x):
-            if child in visited: continue
-            # calculate distance and heur
-            p1, p2 = node.point, child
-            # not having to call a function is ~10 % faster
-
-            d = node.d + abs(p1[0] - p2[0]) + abs(p1[1] - p2[1]) + int(inv_binary_img[p2[1],p2[0]]) * 1000
-            #d = dist_fn(node.point,child) + node.d
-
-            if shortest_found_dist[child] <= d:
-                continue  # we already found it
-
-            # is this path to this node shorter?
-            shortest_found_dist[child] = d
-
-            #h = H_fn(child)
-            h = end_x - child[0]
-
-            heapq.heappush(Q, QueueElem(f=h+d, d=d, point=child, parent=node))
-    logger.error("Cannot run A*")
-    logger.error("Cut above: {}".format(cut_above))
-    logger.error("Cut below: {}".format(cut_below))
-
-    # raise RuntimeError("Unreachable")
-    # Just use the middle line, to avoid crashing
-    logger.error("Using fill path to avoid crashing")
-    fill_path = []
-    for pa, pb in zip(cut_above, cut_below):
-        fill_path.append((pa[0],round((pa[1] + pb[1]) / 2)))
-    return fill_path
-
-
+import pyximport
+pyximport.install(language_level=3)
+from segmentation.postprocessing.find_div_path import find_dividing_path_dag, DividingPathStartingBias, \
+    DividingPathStartConditions, find_dividing_path_old
 
 
 class BaselineHashedLookup:
@@ -323,7 +117,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
     # doing MP here is probably not faster
     for pt, pb in zip(pairs, pairs[1:]):
         # draw_bls([pt[0],pb[1]])
-        cuts.append(find_dividing_path(inv_binary_dilated,pt[0], pb[1]))
+        cuts.append(find_dividing_path_dag(inv_binary_dilated,pt[0], pb[1]))
         # draw_bls([pt[0], pb[1], cuts[-1]])
     for pair, tc, bc in zip(pairs[1:], cuts, cuts[1:]):
         bl_cutouts.append(CutoutElem(bl=pair[0], tc=shorten_cutline(tc, pair[0]), bc=shorten_cutline(bc, pair[0])))
@@ -352,7 +146,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
 
     # fix first line
     height_diff = calculate_height_diff(pairs[0][0], pairs[0][1])
-    first_tc = find_dividing_path(inv_binary_dilated,
+    first_tc = find_dividing_path_dag(inv_binary_dilated,
                                   cut_above=moveline(pairs[0][0], (settings.schnip_schnip_height_diff_factor)*height_diff, int(inv_binary.shape[0])),
                                   cut_below=moveline(pairs[0][1], int(height_diff * 0.3), int(inv_binary.shape[0])),
                                   starting_bias=DividingPathStartingBias.BOTTOM)
@@ -360,7 +154,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
         #first_bc = find_dividing_path(inv_binary, pairs[0][0], pairs[1][1])
         first_bc = cuts[0]
     else:
-        first_bc = find_dividing_path(inv_binary_dilated,
+        first_bc = find_dividing_path_dag(inv_binary_dilated,
                                       pairs[0][0], moveline(pairs[0][0], height_diff, int(inv_binary.shape[0])),
                                       starting_bias=DividingPathStartingBias.TOP)
 
@@ -486,11 +280,12 @@ def schnip_schnip_algorithm(scaled_image: SourceImage, prediction: PredictionRes
             ml_b = node.get_merged_topline_below(node.baseline.points)
         else:
             ml_b = moveline(node.baseline.points, 1.2 * extruded.moved_tops[node.label - 1].height, scaled_image.get_height())
+        fdv = find_dividing_path_old
 
         assert baseline_before == json.dumps(node.baseline.points)
-        top_dl = find_dividing_path(extruded.inverse_binary,ml_a, node.topline.points, starting_bias=DividingPathStartingBias.BOTTOM, start_conditions=DividingPathStartConditions())
+        top_dl = fdv(extruded.inverse_binary,ml_a, node.topline.points, starting_bias=DividingPathStartingBias.BOTTOM, start_conditions=DividingPathStartConditions())
         assert baseline_before == json.dumps(node.baseline.points)
-        bot_dl = find_dividing_path(extruded.inverse_binary, node.baseline.points, ml_b, starting_bias=DividingPathStartingBias.TOP, start_conditions=DividingPathStartConditions())
+        bot_dl = fdv(extruded.inverse_binary, node.baseline.points, ml_b, starting_bias=DividingPathStartingBias.TOP, start_conditions=DividingPathStartConditions())
         assert baseline_before == json.dumps(node.baseline.points)
 
         cutout = CutoutElem(node.baseline.points,top_dl,bot_dl)

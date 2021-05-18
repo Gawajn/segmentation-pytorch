@@ -49,7 +49,7 @@ def _build_bl_growth_img(binarized: np.ndarray, points: np.ndarray):
 class BaselineLookupByPoint:
     def __init__(self, bl: List[List[Tuple[int,int]]]):
         self.baselines = bl
-        pos_lookup = dict()
+        pos_lookup = {}
         for i, line in enumerate(bl):
             for p in line:
                 pos_lookup[(p[0],p[1])] = i
