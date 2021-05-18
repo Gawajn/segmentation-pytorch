@@ -117,7 +117,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
     # doing MP here is probably not faster
     for pt, pb in zip(pairs, pairs[1:]):
         # draw_bls([pt[0],pb[1]])
-        cuts.append(find_dividing_path_dag(inv_binary_dilated,pt[0], pb[1]))
+        cuts.append(find_dividing_path_old(inv_binary_dilated,pt[0], pb[1]))
         # draw_bls([pt[0], pb[1], cuts[-1]])
     for pair, tc, bc in zip(pairs[1:], cuts, cuts[1:]):
         bl_cutouts.append(CutoutElem(bl=pair[0], tc=shorten_cutline(tc, pair[0]), bc=shorten_cutline(bc, pair[0])))
@@ -146,7 +146,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
 
     # fix first line
     height_diff = calculate_height_diff(pairs[0][0], pairs[0][1])
-    first_tc = find_dividing_path_dag(inv_binary_dilated,
+    first_tc = find_dividing_path_old(inv_binary_dilated,
                                   cut_above=moveline(pairs[0][0], (settings.schnip_schnip_height_diff_factor)*height_diff, int(inv_binary.shape[0])),
                                   cut_below=moveline(pairs[0][1], int(height_diff * 0.3), int(inv_binary.shape[0])),
                                   starting_bias=DividingPathStartingBias.BOTTOM)
@@ -154,7 +154,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
         #first_bc = find_dividing_path(inv_binary, pairs[0][0], pairs[1][1])
         first_bc = cuts[0]
     else:
-        first_bc = find_dividing_path_dag(inv_binary_dilated,
+        first_bc = find_dividing_path_old(inv_binary_dilated,
                                       pairs[0][0], moveline(pairs[0][0], height_diff, int(inv_binary.shape[0])),
                                       starting_bias=DividingPathStartingBias.TOP)
 
@@ -166,7 +166,7 @@ def schnip_schnip_algorithm_old(scaled_image: SourceImage, prediction: Predictio
         #bot_tc = find_dividing_path(inv_binary, pairs[-2][0], pairs[-1][1])
         bot_tc = cuts[-1]
         height_diff = calculate_height_diff(pairs[-1][0], pairs[-1][1])
-        bot_bc = find_dividing_path(inv_binary_dilated,
+        bot_bc = find_dividing_path_old(inv_binary_dilated,
                                     pairs[-1][0], moveline(pairs[-1][0], height_diff, int(inv_binary.shape[0])),
                                     starting_bias=DividingPathStartingBias.TOP)
         bl_cutouts = bl_cutouts + [CutoutElem(pairs[-1][0],tc=shorten_cutline(bot_tc, pairs[-1][0]), bc=shorten_cutline(bot_bc,pairs[-1][0]))]

@@ -85,6 +85,7 @@ class DividingPathStartConditions:
 
 
 def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, starting_bias = DividingPathStartingBias.MID, start_conditions: DividingPathStartConditions = None) -> List:
+    inv_binary_img = np.array(inv_binary_img, dtype=np.float32)
     # assert, that both cut_baseline is a list of lists and cut_topline is also a list of lists
     tl, bl = extend_baselines(cut_above, cut_below)
 
@@ -347,6 +348,7 @@ def shortest_path_dag(inv_binary_img: np.ndarray, tl: List, bl: List, start_x, s
 
 
 def find_dividing_path_dag(inv_binary_img: np.ndarray, cut_above, cut_below, starting_bias = DividingPathStartingBias.MID, start_conditions: DividingPathStartConditions = DividingPathStartConditions()) -> List:
+
     #assert inv_binary_img.dtype == np.float32, "Inv Binary img has wrong dtype. Required: float32"
     inv_binary_img = np.array(inv_binary_img, dtype=np.float32)
     # assert, that both cut_baseline is a list of lists and cut_topline is also a list of lists
