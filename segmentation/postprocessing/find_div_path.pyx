@@ -235,14 +235,14 @@ def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, sta
     cdef int p21
     cdef int d
     cdef ChildrenResp children
-    visited_child_arr = np.full(shape=inv_binary_img.shape, fill_value=np.int(2147483647.0))
-
+    visited_child_arr = np.full(shape=inv_binary_img.shape, fill_value=np.int32(2147483647))
+    cdef int[:,:] visited_child = visited_child_arr
     for elem in Q:
         shortest_found_dist[elem.point] = elem.d
     while Q:
         node = heap_pop(Q)
-        if node.point in visited: continue # if we already visited this node
-        visited.add(node.point)
+        #if node.point in visited: continue # if we already visited this node
+        #visited.add(node.point)
         if node.point[0] == end_x:
             path = make_path(node, start_elem)
             if False:
@@ -254,11 +254,13 @@ def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, sta
                 #seq_number += 1
                 #dd.show()
             return path
+        if visited_child[node.point[1], node.point[0]] < 0: continue # already visited
         children = find_children_rect(node.point[0], node.point[1], start_x, tly, bly)
         #for child in find_children_rect(node.point[0], node.point[1], start_x, tly, bly):
         for n in range(children.n):
             child = tuple((children.px[n], children.py[n]))
-            if child in visited: continue
+            if visited_child[child[1], child[0]] < 0: continue
+            #if child in visited: continue
             # calculate distance and heur
             p1, p2 = node.point, child
             # not having to call a function is ~10 % faster
@@ -270,16 +272,19 @@ def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, sta
             d = <int> node.d + abs(p10 - p20) + abs(p11 - p21) + <int>(inv_bin_view[p21, p20]) * 1000
             #d = dist_fn(node.point,child) + node.d
 
-            if shortest_found_dist[child] <= d:
+            #if shortest_found_dist[child] <= d:
+            if visited_child[child[1], child[0]] <= d:
                 continue  # we already found it
 
             # is this path to this node shorter?
-            shortest_found_dist[child] = d
+            #shortest_found_dist[child] = d
+            visited_child[child[1], child[0]] = d
 
             #h = H_fn(child)
             h = end_x - child[0]
 
             heap_push(Q, QueueElem(f=h+d, d=d, point=child, parent=node))
+        visited_child[node.point[1], node.point[0]] = -1
     logger.error("Cannot run A*")
     logger.error("Cut above: {}".format(cut_above))
     logger.error("Cut below: {}".format(cut_below))
