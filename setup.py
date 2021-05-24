@@ -1,4 +1,5 @@
 from setuptools import setup, find_packages
+from Cython.Build import cythonize
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -14,7 +15,7 @@ setup(
     author="Alexander Hartelt",
     author_email="alexander.hartelt@informatik.uni-wuerzburg.de",
     url="https://github.com/Gawajn/segmentation-pytorch",
-    install_requires=open("requirements.txt").read().split(),
+    install_requires="",#open("requirements.txt").read().split(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
@@ -29,5 +30,6 @@ setup(
         'console_scripts':[
             'pytorchseg_predict=segmentation.scripts.predict:main'
         ]
-    }
+    },
+    ext_modules= cythonize("segmentation/postprocessing/find_div_path.pyx",language="c++")
 )

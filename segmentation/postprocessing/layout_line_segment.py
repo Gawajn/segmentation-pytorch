@@ -24,8 +24,7 @@ from segmentation.postprocessing.util import NewImageReconstructor
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.util import logger, PerformanceCounter
 
-import pyximport
-pyximport.install(language_level=3)
+
 from segmentation.postprocessing.find_div_path import find_dividing_path_dag, DividingPathStartingBias, \
     DividingPathStartConditions, find_dividing_path_old, extend_baselines, QueueElem, make_path
 
@@ -420,32 +419,38 @@ def schnip_schnip_algorithm(scaled_image: SourceImage, prediction: PredictionRes
 
     with PerformanceCounter("ss"):
         for node_i, node in enumerate(blg.nodes):
-            baseline_before = json.dumps(node.baseline.points)
+            #baseline_before = json.dumps(node.baseline.points)
 
             if node.above:
                 ml_a = node.get_merged_line_above(node.topline.points)
             else:
                 ml_a = moveline(node.topline.points, settings.schnip_schnip_height_diff_factor * extruded.moved_tops[node.label - 1].height, scaled_image.get_height())
 
-            assert baseline_before == json.dumps(node.baseline.points)
+            #assert baseline_before == json.dumps(node.baseline.points)
 
             if node.below:
                 ml_b = node.get_merged_topline_below(node.baseline.points)
             else:
                 ml_b = moveline(node.baseline.points, 1.2 * extruded.moved_tops[node.label - 1].height, scaled_image.get_height())
+
             if False and ml_a[0][1] - ml_b[0][1] < 1:
                 fdv = find_dividing_path_dag
             else:
-                fdv = find_dividing_path_python
+                fdv = find_dividing_path_old
 
-            assert baseline_before == json.dumps(node.baseline.points)
+           # assert baseline_before == json.dumps(node.baseline.points)
             top_dl = fdv(extruded.inverse_binary,ml_a, node.topline.points, starting_bias=DividingPathStartingBias.BOTTOM, start_conditions=DividingPathStartConditions(), cumsum_y=cumsum_y)
-            assert baseline_before == json.dumps(node.baseline.points)
+            top_dl2 = find_dividing_path_python(extruded.inverse_binary,ml_a, node.topline.points, starting_bias=DividingPathStartingBias.BOTTOM, start_conditions=DividingPathStartConditions(), cumsum_y=cumsum_y)
+            print("Top DL:", top_dl)
+            print("Top DL2:", top_dl2)
+
+            assert json.dumps(top_dl) == json.dumps(top_dl2)
+            #assert baseline_before == json.dumps(node.baseline.points)
             bot_dl = fdv(extruded.inverse_binary, node.baseline.points, ml_b, starting_bias=DividingPathStartingBias.TOP, start_conditions=DividingPathStartConditions(), cumsum_y=cumsum_y )
-            assert baseline_before == json.dumps(node.baseline.points)
+            #assert baseline_before == json.dumps(node.baseline.points)
 
             cutout = CutoutElem(node.baseline.points,top_dl,bot_dl)
-            assert baseline_before == json.dumps(node.baseline.points)
+            #assert baseline_before == json.dumps(node.baseline.points)
             cutouts.append(cutout)
 
     return cutouts

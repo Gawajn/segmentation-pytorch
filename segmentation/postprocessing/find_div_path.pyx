@@ -1,4 +1,7 @@
+# distutils : language = c++
+
 import heapq
+import time
 from collections import namedtuple, defaultdict
 from dataclasses import dataclass
 from enum import Enum
@@ -11,17 +14,32 @@ from segmentation.postprocessing.debug_draw import DebugDraw
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.util import logger, PerformanceCounter
 
-QueueElem = namedtuple("QueueElem", "f d point parent")
-"""
-cdef class QueueElem:
-    cpdef int f
-    cpdef int d
-    cpdef object point
-    cpdef object parent
+#QueueElem = namedtuple("QueueElem", "f d point parent")
 
-    def __lt__(self, QueueElem other):
+from libcpp.vector cimport vector
+from libcpp.queue cimport priority_queue
+
+cimport libcpp.algorithm
+
+from libcpp cimport bool
+
+class QueueElem:
+    __slots__ = ["f", "d", "point", "parent"]
+    #cpdef int f
+    #cpdef int d
+    #cpdef object point
+    #cpdef object parent
+
+    def __init__(self, f, d, point, parent):
+        self.f = f
+        self.d = d
+        self.point = point
+        self.parent = parent
+
+
+    def  __lt__(self, other):
         return self.f < other.f
-"""
+
 # f is dist + heur, d is distance, n is node, p is parent
 
 def extend_baselines(line_a: List, line_b: List) -> Tuple[List,List]:
@@ -122,7 +140,7 @@ cdef ChildrenResp find_children_rect(int cnx, int cny, int x_start, int[:] tly, 
     if tly[xi + 1] <= y <= bly[xi + 1]:
         out.px[out.n] = x+1
         out.py[out.n] = y
-        out.n+=1
+        out.n += 1
         #out.append((x + 1, y))
     if y > y1:
         #out.append ((x, y-1))
@@ -135,6 +153,37 @@ cdef ChildrenResp find_children_rect(int cnx, int cny, int x_start, int[:] tly, 
         out.py[out.n] = y+1
         out.n += 1
     return out
+
+cdef cppclass QElemC:
+    int f
+    int d
+    int px, py
+    int parent_x, parent_y
+
+    __init__():
+        pass
+
+    void set(int f = 0, int d = 0, int px = 0, int py = 0, int parent_x = 0, int parent_y = 0):
+        this.f = f
+        this.d = d
+        this.px = px
+        this.py = py
+        this.parent_x = parent_x
+        this.parent_y = parent_y
+
+    void printit():
+        print(this.f, this.d, this.px, this.py, this.parent_x, this.parent_y)
+
+    bool "operator<"(const QElemC& other) const:
+        return this.f > other.f
+
+cdef cppclass QElemCCompare:
+    __init__():
+        pass
+    bool "operator()"(const QElemC& a, const QElemC& b) const:
+        return a.f > b.f
+
+
 
 def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, starting_bias = DividingPathStartingBias.MID, start_conditions: DividingPathStartConditions = None, cumsum_y = None) -> List:
     inv_binary_img = np.array(inv_binary_img, dtype=np.float32)
@@ -214,18 +263,30 @@ def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, sta
 
     start_elem = QueueElem(0, 0, start_point, None)
     Q: List[QueueElem] = []
-    heap_push = heapq.heappush
-    heap_pop = heapq.heappop
+    #cdef vector[QElemC] cheap
+    cdef priority_queue[QElemC] pqueue
+    cdef QElemC cnode
+    #cdef heap_push = heapq.heappush
+    #cdef heap_pop = heapq.heappop
     if start_conditions and start_conditions.starting_cheaper_y:
         for p in source_points:
-            heap_push(Q,QueueElem(d=cheaper_y_dist_fn(start_point, p), f=cheaper_y_dist_fn(start_point,p) + H_fn(p),point=p,parent=start_elem))
+            cnode.set(<int>cheaper_y_dist_fn(start_point,p) + H_fn(p),<int>cheaper_y_dist_fn(start_point, p), <int>p[0], <int>p[1], <int>start_point[0], <int>start_point[1])
+            #cheap.push_back(cnode)
+            #libcpp.algorithm.push_heap(cheap.begin(), cheap.end(), QElemCCompare())
+            pqueue.push(cnode)
+
+            #heap_push(Q,QueueElem(d=cheaper_y_dist_fn(start_point, p), f=cheaper_y_dist_fn(start_point,p) + H_fn(p),point=p,parent=start_elem))
     else: # default behaviour
         for p in source_points:
-            heap_push(Q,QueueElem(d=dist_fn(start_point, p), f=dist_fn(start_point,p) + H_fn(p),point=p,parent=start_elem))
+            cnode.set(dist_fn(start_point,p) + H_fn(p),dist_fn(start_point, p), p[0], p[1], start_point[0], start_point[1])
+            #cheap.push_back(cnode)
+            #libcpp.algorithm.push_heap(cheap.begin(), cheap.end(), QElemCCompare())
+            pqueue.push(cnode)
+            #heap_push(Q,QueueElem(d=dist_fn(start_point, p), f=dist_fn(start_point,p) + H_fn(p),point=p,parent=start_elem))
 
     #distance = defaultdict(lambda: 2147483647)
     visited = set()
-    shortest_found_dist = defaultdict(lambda: 2147483647)
+    #shortest_found_dist = defaultdict(lambda: 2147483647)
 
     cdef float [:, :] inv_bin_view = inv_binary_img
 
@@ -236,14 +297,55 @@ def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, sta
     cdef int d
     cdef ChildrenResp children
     visited_child_arr = np.full(shape=inv_binary_img.shape, fill_value=np.int32(2147483647))
+    parents_arr = np.full(shape=(inv_binary_img.shape[0], inv_binary_img.shape[1], 2), fill_value=np.int32(-1), dtype=np.int32)
+    cdef int[:,:,:] parents = parents_arr
     cdef int[:,:] visited_child = visited_child_arr
-    for elem in Q:
-        shortest_found_dist[elem.point] = elem.d
-    while Q:
-        node = heap_pop(Q)
+    for elem in Q: pass
+        #shortest_found_dist[elem.point] = elem.d
+    cdef int cx
+    cdef int cy
+    cdef int h
+    while pqueue.size() > 0:
+        # print the first 3 heap elements
+        #print("->")
+        #for xxxx in range(min(3,pqueue.size())):
+        #    pqueue[xxxx].printit()
+        #time.sleep(2)
+        # print the first 3 queue elements
+        #cnode = cheap[0]
+        cnode = pqueue.top()
+        #libcpp.algorithm.pop_heap(cheap.begin(), cheap.end(),QElemCCompare())
+        #cheap.pop_back()
+        pqueue.pop()
+
+        p10 = cnode.px
+        p11 = cnode.py
+        if visited_child[p11,p10] < 0: continue # already visited
+        visited_child[p11, p10] = -1 # else: we now visit it
+
+        # set the parents value
+        parents[cnode.py, cnode.px,0] = cnode.parent_x
+        parents[cnode.py, cnode.px,1] = cnode.parent_y
+        #node = heap_pop(Q)
+
+
+
         #if node.point in visited: continue # if we already visited this node
         #visited.add(node.point)
-        if node.point[0] == end_x:
+        if cnode.px == end_x:
+            # make the path
+            path_reversed = []
+            current_x = cnode.px
+            current_y = cnode.py
+            while True:
+                path_reversed.append((int(current_x), int(current_y)))
+
+                if (current_x == start_point[0] and current_y == start_point[1]) or current_x == start_point[0] + 1:
+                    print(path_reversed)
+                    return list(reversed(path_reversed))
+                else:
+                    current_x, current_y = parents[current_y, current_x, 0], parents[current_y, current_x, 1]
+            node = QueueElem(f=cnode.f, d=cnode.d, point=(cnode.px, cnode.py), parent=(cnode.parent_x, cnode.parent_y))
             path = make_path(node, start_elem)
             if False:
                 dd = DebugDraw(SourceImage.from_numpy(np.array(255*(1 - inv_binary_img),dtype=np.uint8)))
@@ -254,40 +356,42 @@ def find_dividing_path_old(inv_binary_img: np.ndarray, cut_above, cut_below, sta
                 #seq_number += 1
                 #dd.show()
             return path
-        if visited_child[node.point[1], node.point[0]] < 0: continue # already visited
-        children = find_children_rect(node.point[0], node.point[1], start_x, tly, bly)
+
+        children = find_children_rect(p10, p11, start_x, tly, bly)
         #for child in find_children_rect(node.point[0], node.point[1], start_x, tly, bly):
         for n in range(children.n):
-            child = tuple((children.px[n], children.py[n]))
-            if visited_child[child[1], child[0]] < 0: continue
+            #child = tuple((children.px[n], children.py[n]))
+            cx = children.px[n]
+            cy = children.py[n]
+            if visited_child[cy,cx] < 0: continue
             #if child in visited: continue
             # calculate distance and heur
-            p1, p2 = node.point, child
+            #p1, p2 = node.point, child
             # not having to call a function is ~10 % faster
-            p10 = p1[0]
-            p11 = p1[1]
-            p20 = p2[0]
-            p21 = p2[1]
 
-            d = <int> node.d + abs(p10 - p20) + abs(p11 - p21) + <int>(inv_bin_view[p21, p20]) * 1000
+            p20 = cx
+            p21 = cy
+
+            d = <int> cnode.d + abs(p10 - p20) + abs(p11 - p21) + (<int>(inv_bin_view[p21, p20]) * 1000)
             #d = dist_fn(node.point,child) + node.d
-
+            h = d + (end_x - cx)
             #if shortest_found_dist[child] <= d:
-            if visited_child[child[1], child[0]] <= d:
-                continue  # we already found it
+            if visited_child[cy,cx] <= d:
+                continue  # already found shorter path to this node
 
             # is this path to this node shorter?
             #shortest_found_dist[child] = d
-            visited_child[child[1], child[0]] = d
+            visited_child[cy,cx] = d
 
-            #h = H_fn(child)
-            h = end_x - child[0]
+            #heap_push(Q, QueueElem(f=h+d, d=d, point=child, parent=node))
+            cnode.set(h, d, cx, cy, p10,p11)
+            #cheap.push_back(cnode)
+            #libcpp.algorithm.push_heap(cheap.begin(), cheap.end(), QElemCCompare())
+            pqueue.push(cnode)
 
-            heap_push(Q, QueueElem(f=h+d, d=d, point=child, parent=node))
-        visited_child[node.point[1], node.point[0]] = -1
     logger.error("Cannot run A*")
-    logger.error("Cut above: {}".format(cut_above))
-    logger.error("Cut below: {}".format(cut_below))
+    #logger.error("Cut above: {}".format(cut_above))
+    #logger.error("Cut below: {}".format(cut_below))
 
     # raise RuntimeError("Unreachable")
     # Just use the middle line, to avoid crashing
