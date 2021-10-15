@@ -9,10 +9,13 @@ from segmentation.util import logger
 class CustomModel(Enum):
     UNET = 'unet'
     AttentionNet = 'attentionunet'
+    OneModelEnsemble = 'one_model_ensemble'
 
     def __call__(self):
         return {'unet': UNet,
                 'attentionunet': AttentionUnet,
+                'one_model_ensemble': OneModelEnsemble,
+
                 }[self.value]
 
 
@@ -202,6 +205,9 @@ class AttentionUnet(nn.Module):
                            encoder_filter=encoder_filter, decoder_filter=decoder_filter)
 
     def forward(self, x):
+        shape = list(x.shape)[2:]
+        x = pad(x, 32)  # Todo: calculate padding value based on layers
+
         if self.attention:
             resized_images = [x]
             for t in range(self.attention_depth - 1):
@@ -216,7 +222,36 @@ class AttentionUnet(nn.Module):
 
         else:
             x_out = self.m1(x)
+        x_out = unpad(x_out, shape)
         return x_out
+
+
+class OneModelEnsemble(nn.Module):
+    def __init__(self, in_channels=3, out_channels=16, n_class=10, kernel_size=3, padding=1, stride=1, attention=True,
+                 encoder_depth=3, attention_depth=3, attention_encoder_depth=3, encoder_filter=None,
+                 decoder_filter=None,
+                 attention_encoder_filter=None, ensemble=5):
+        super().__init__()
+
+        self.conv = BaseConv(out_channels, out_channels, kernel_size, padding, stride)
+        self.networks = []
+        for i in range(ensemble):
+            self.networks.append(
+                AttentionUnet(in_channels, out_channels, n_class, kernel_size, padding, stride, attention,
+                              encoder_depth, attention_depth, attention_encoder_depth, encoder_filter,
+                              decoder_filter, attention_encoder_filter))
+
+    def forward(self, x, y):
+        out = []
+        for ind, model in enumerate(self.networks):
+            output = model(x)
+            if y == torch.tensor(ind):
+                output = output * 0
+            out.append(output)
+
+        prob_map = torch.mean(torch.stack(out), dim=0)
+        out.append(self.conv(prob_map))
+        return out
 
 
 def test():

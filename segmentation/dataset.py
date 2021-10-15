@@ -94,7 +94,7 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
         ran = np.random.randint(1, 5)
         if ran == 1:
             if ocropy:
-                binary = binarize(result["image"].astype("float64")).astype("uint8")*255
+                binary = binarize(result["image"].astype("float64")).astype("uint8") * 255
                 gray = gray_to_rgb(binary)
                 result["image"] = gray_to_rgb(gray)
             else:
@@ -103,12 +103,14 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
 
     if apply_preprocessing is not None and apply_preprocessing:
         result["image"] = preprocessing(result["image"])
+    print(result["image"])
     result = compose([post_transforms()])(**result)
     return result["image"], result["mask"]
 
 
 class MaskDataset(Dataset):
-    def __init__(self, df, color_map, preprocessing=default_preprocessing, transform=None, rgb=True, scale_area=1000000):
+    def __init__(self, df, color_map, preprocessing=default_preprocessing, transform=None, rgb=True,
+                 scale_area=1000000):
         self.df = df
         self.color_map = color_map
         self.augmentation = transform
@@ -138,7 +140,8 @@ class MaskDataset(Dataset):
 
 
 class MemoryDataset(Dataset):
-    def __init__(self, df, color_map=None, preprocessing=default_preprocessing, transform=None, rgb=True, scale_area=1000000):
+    def __init__(self, df, color_map=None, preprocessing=default_preprocessing, transform=None, rgb=True,
+                 scale_area=1000000):
         self.df = df
         self.color_map = color_map
         self.augmentation = transform
@@ -219,6 +222,46 @@ class PredictDataset(Dataset):
                               apply_preprocessing=apply_preprocessing, augmentation=None, binary_augmentation=True,
                               color_map=self.color_map)
         return image, mask, torch.tensor(item)
+
+    def __len__(self):
+        return len(self.index)
+
+
+def div(array_length, divides):
+
+    items_per_fold = int(math.ceil(array_length / divides))
+    f = [x for x in range(5)] * items_per_fold
+    random.shuffle(f)
+    return f[:array_length]
+
+
+class EnsembleModelXMLDataset(Dataset):
+    def __init__(self, df, color_map, mask_generator: BaseMaskGenerator, preprocessing=default_preprocessing,
+                 transform=None, rgb=True, scale_area=1000000, ensemble=5):
+        self.df = df
+        self.color_map = color_map
+        self.augmentation = transform
+        self.index = self.df.index.tolist()
+        self.preprocessing = preprocessing
+        self.rgb = rgb
+        self.mask_generator = mask_generator
+        self.scale_area = scale_area
+        self.ensemble = ensemble
+        df['fold'] = pd.Series([x for x in div(len(self.index), self.ensemble)])
+
+    def __getitem__(self, item, apply_preprocessing=True):
+        image_id, mask_id, fold = self.df.get('images')[item], self.df.get('masks')[item], self.df.get('fold')[item]
+        image = Image.open(image_id)
+        rescale_factor = get_rescale_factor(image, scale_area=self.scale_area)
+
+        mask = self.mask_generator.get_mask(mask_id, rescale_factor)
+        image = np.array(rescale_pil(image, rescale_factor, 1))
+        if image.dtype == bool:
+            image = image.astype("uint8") * 255
+        image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
+                              apply_preprocessing=apply_preprocessing, augmentation=self.augmentation,
+                              binary_augmentation=True, color_map=self.color_map)
+        return image, mask, torch.tensor(item), torch.tensor(fold)
 
     def __len__(self):
         return len(self.index)
@@ -469,6 +512,10 @@ def track():
 
 
 if __name__ == '__main__':
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    import torch.nn.functional as F
     'https://github.com/catalyst-team/catalyst/blob/master/examples/notebooks/segmentation-tutorial.ipynb'
     a = dirs_to_pandaframe(
         ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/image/'],
@@ -483,9 +530,10 @@ if __name__ == '__main__':
 
     settings = MaskSetting(MASK_TYPE=MaskType.BASE_LINE, PCGTS_VERSION=PCGTSVersion.PCGTS2013, LINEWIDTH=5,
                            BASELINELENGTH=10)
-    dt = XMLDataset(a, map, transform=compose([post_transforms()]), mask_generator=MaskGenerator(settings=settings))
-    d_test = XMLDataset(b, map, transform=compose([post_transforms()]), mask_generator=MaskGenerator(settings=settings))
-
+    dt = EnsembleModelXMLDataset(a, map, mask_generator=MaskGenerator(settings=settings))
+    d_test = EnsembleModelXMLDataset(b, map, mask_generator=MaskGenerator(settings=settings))
+    print(dt.__getitem__(5))
+    '''
     import torch
     import torch.nn as nn
     import torch.optim as optim
@@ -524,3 +572,4 @@ if __name__ == '__main__':
         print('Training started ...')
         train(model, device, train_loader, optimizer, epoch)
         test(model, device, test_loader)
+    '''

@@ -12,7 +12,6 @@ from typing import Union, Tuple
 import numpy as np
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
 
-from matplotlib import pyplot as plt
 from segmentation.util import logger
 
 
@@ -66,22 +65,34 @@ def unpad(tensor, o_shape):
     return output
 
 
-def test(model, device, test_loader, criterion, padding_value=32):
+def test(model, device, test_loader, criterion, padding_value=32, one_model=False):
     model.eval()
     test_loss = 0
     correct = 0
     total = 0
     with torch.no_grad():
-        for idx, (data, target, id) in enumerate(test_loader):
-            data, target = data.to(device), target.to(device, dtype=torch.int64)
-            shape = list(data.shape)[2:]
-            padded = pad(data, padding_value)
+        for idx, data_entries in enumerate(test_loader):
+            fold = None
+            if len(data_entries) == 3:
+                (data, target, id) = data_entries
+            else:
+                (data, target, id, fold) = data_entries
+                fold = fold.to(device, dtype=torch.int64)
+            data, target = data.to(device), target.to(device, dtype=torch.int64),
+            #shape = list(data.shape)[2:]
+            #padded = pad(data, padding_value)
+            input = data.float()
 
-            input = padded.float()
+            if one_model:
+                output = model(input, -1)
 
-            output = model(input)
-            output = unpad(output, shape)
-            test_loss += criterion(output, target)
+                test_loss += criterion(output[fold], target)
+            else:
+                # output = unpad(output, shape)
+                output = model(input)
+                test_loss += criterion(output, target)
+
+            #output = unpad(output, shape)
             _, predicted = torch.max(output.data, 1)
 
             total += target.nelement()
@@ -98,7 +109,7 @@ def test(model, device, test_loader, criterion, padding_value=32):
 
 
 def train(model, device, train_loader, optimizer, epoch, criterion, accumulation_steps=8, color_map=None,
-          callback: TrainProgressCallbackWrapper = None, padding_value=32, debug=False):
+          callback: TrainProgressCallbackWrapper = None, padding_value=32, debug=False, one_model=False):
     def debug_img(mask, target, original, color_map):
         if color_map is not None:
             from matplotlib import pyplot as plt
@@ -124,18 +135,33 @@ def train(model, device, train_loader, optimizer, epoch, criterion, accumulation
     total_train = 0
     correct_train = 0
 
-    for batch_idx, (data, target, id) in enumerate(train_loader):
+    for batch_idx, data_entries in enumerate(train_loader):
+        fold = None
+        if len(data_entries) == 3:
+            (data, target, id) = data_entries
+        else:
+            (data, target, id, fold) = data_entries
+            fold = fold.to(device, dtype=torch.int64)
 
         data, target = data.to(device), target.to(device, dtype=torch.int64)
 
-        shape = list(data.shape)[2:]
-        padded = pad(data, padding_value)
+        #shape = list(data.shape)[2:]
+        #padded = pad(data, padding_value)
+        input = data.float()
 
-        input = padded.float()
 
-        output = model(input)
-        output = unpad(output, shape)
-        loss = criterion(output, target)
+        if one_model:
+            output = model(input, fold)
+
+            loss = []
+            for otp in output:
+                loss = loss.append(criterion(otp, target))
+        else:
+        #output = unpad(output, shape)
+            output = model(input)
+
+            loss = criterion(output, target)
+        print(loss)
         loss = loss / accumulation_steps
         loss.backward()
         _, predicted = torch.max(output.data, 1)
@@ -374,7 +400,8 @@ class Network(object):
                       accumulation_steps=self.settings.BATCH_ACCUMULATION,
                       color_map=self.color_map,
                       callback=callback, padding_value=self.padding_value)
-            accuracy, loss = test(self.model, self.device, val_loader, criterion=criterion, padding_value=self.padding_value)
+            accuracy, loss = test(self.model, self.device, val_loader, criterion=criterion,
+                                  padding_value=self.padding_value)
             if self.settings.OUTPUT_PATH is not None:
 
                 if accuracy > highest_accuracy:
@@ -396,7 +423,8 @@ class Network(object):
         criterion = nn.CrossEntropyLoss()
         val_loader = data.DataLoader(dataset=self.settings.PREDICT_DATASET, batch_size=1,
                                      shuffle=False)
-        accuracy, loss = test(self.model, self.device, val_loader, criterion=criterion, padding_value=self.padding_value)
+        accuracy, loss = test(self.model, self.device, val_loader, criterion=criterion,
+                              padding_value=self.padding_value)
 
         return accuracy, loss
 
@@ -667,8 +695,8 @@ if __name__ == '__main__':
     p_setting = PredictorSettings(PREDICT_DATASET=d_predict,
                                   MODEL_PATH='/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/attention_net23.torch')
     trainer = Network(p_setting, color_map=map)
-    #trainer.train()
-    #from PIL import Image
+    # trainer.train()
+    # from PIL import Image
 
     # a = np.array(Image.open(a.get('images')[0]))
     # data = trainer.predict_single_image(a)

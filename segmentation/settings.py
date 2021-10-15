@@ -15,7 +15,7 @@ class CustomModelSettings:
     ENCODER_FILTER: list
     DECODER_FILTER: list
     ATTENTION_ENCODER_FILTER: list
-    TYPE: str = "attentionunet"
+    TYPE: str = "one_model_ensemble"
     KERNEL_SIZE: int = 3
     PADDING: int = 1
     STRIDE: int = 1
@@ -71,6 +71,7 @@ class TrainSettings:
     ARCHITECTURE: Architecture = Architecture.UNET
     MODEL_PATH: str = None
     IMAGEMAX_AREA: int = 1000000
+    ENSEMBLE_MODEL: bool = False
 
     PROCESSES: int = 0
 

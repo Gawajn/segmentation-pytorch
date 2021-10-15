@@ -80,6 +80,7 @@ def main():
     parser.add_argument('--encoder_filter', nargs='+', type=int, help="filter of the encoder of the custom model. Number of filters should be equal to enocder depth + 1")
     parser.add_argument('--decoder_filter', nargs='+', type=int, help="filter of the decoder of the custom model. Number of filters should be equal to encoder depth + 1")
     parser.add_argument('--encoder_attention_filter', nargs='+', type=int, help="filter of the attention encoder of the custom model. Number of filters should be equal to attention depth + 1")
+    parser.add_argument('--ensemble_model', nargs='+', type=int, help="Use Ensemble model")
     parser.add_argument('--seed', default=123, type=int)
     args = parser.parse_args()
     train = dirs_to_pandaframe(args.train_input, args.train_mask)
@@ -124,7 +125,7 @@ def main():
                                     ENCODER=args.encoder,
                                     ARCHITECTURE=Architecture(args.architecture), PROCESSES=args.processes,
                                     PADDING_VALUE=args.padding_value,
-                                    CUSTOM_MODEL=custom_model)
+                                    CUSTOM_MODEL=custom_model, ENSEMBLE_MODEL=args.ensemble_model)
             trainer = Network(setting, color_map=map)
             trainer.train()
             model_paths.append(model_path)
@@ -160,7 +161,7 @@ def main():
                                 OPTIMIZER=Optimizers(args.optimizer), BATCH_ACCUMULATION=args.batch_accumulation,
                                 ENCODER=args.encoder,
                                 ARCHITECTURE=Architecture(args.architecture), PROCESSES=args.processes,
-                                CUSTOM_MODEL=custom_model, PADDING_VALUE=args.padding_value)
+                                CUSTOM_MODEL=custom_model, PADDING_VALUE=args.padding_value, ENSEMBLE_MODEL=args.ensemble_model)
 
         trainer = Network(setting, color_map=map)
         trainer.train()
