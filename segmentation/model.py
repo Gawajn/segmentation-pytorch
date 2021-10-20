@@ -179,14 +179,24 @@ class AttentionUnet(nn.Module):
     def __init__(self, in_channels=3, out_channels=16, n_class=10, kernel_size=3, padding=1, stride=1, attention=True,
                  encoder_depth=3, attention_depth=3, attention_encoder_depth=3, encoder_filter=None,
                  decoder_filter=None,
-                 attention_encoder_filter=None):
+                 attention_encoder_filter=None, weight_sharing=False):
         super().__init__()
+        self.weigth_sharing = weight_sharing
         self.attention = attention
         self.unets = nn.ModuleList([])
         self.attentions = nn.ModuleList([])
         self.attention_depth = attention_depth
         if attention:
-            for i in range(attention_depth):
+            if weight_sharing:
+                for i in range(attention_depth):
+                    self.unets.append(UNet(in_channels=in_channels, out_channels=out_channels, n_class=n_class,
+                                           kernel_size=kernel_size, padding=padding, stride=stride, depth=encoder_depth,
+                                           encoder_filter=encoder_filter, decoder_filter=decoder_filter))
+                    self.attentions.append(
+                        Attention(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+                                  padding=padding, stride=stride, depth=attention_encoder_depth,
+                                  encoder_filter=attention_encoder_filter))
+            else:
                 self.unets.append(UNet(in_channels=in_channels, out_channels=out_channels, n_class=n_class,
                                        kernel_size=kernel_size, padding=padding, stride=stride, depth=encoder_depth,
                                        encoder_filter=encoder_filter, decoder_filter=decoder_filter))
@@ -206,14 +216,57 @@ class AttentionUnet(nn.Module):
             resized_images = [x]
             for t in range(self.attention_depth - 1):
                 resized_images.append(self.dpool(resized_images[-1]))
+            attention_maps = []
+            u_maps = []
+            results = []
+            res = None
+            if len(self.attentions) > 1:
+                for ind, t in enumerate(resized_images):
+                    att_m = self.attentions[ind](t)
+                    up_att_m = F.upsample_nearest(att_m, x.shape[2:])
+                    attention_maps.append(up_att_m)
+                    u_m = self.unets[ind](t)
+                    up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                    u_maps.append(up_u_m)
+
+                m = torch.nn.functional.softmax(torch.stack(attention_maps).float(), dim=0)
+                for ind, x in enumerate(u_maps):
+                    if res is None:
+                        res = x * m[ind]
+                    else:
+                        res += x * m[ind]
+                x_out = res
+            else:
+                for ind, t in enumerate(resized_images):
+                    att_m = self.attentions[0](t)
+                    up_att_m = F.upsample_nearest(att_m, x.shape[2:])
+                    attention_maps.append(up_att_m)
+                    u_m = self.unets[0](t)
+                    up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                    u_maps.append(up_u_m)
+
+                m = torch.nn.functional.softmax(torch.stack(attention_maps).float(), dim=0)
+                for ind, x in enumerate(u_maps):
+                    if res is None:
+                        res = x * m[ind]
+                    else:
+                        res += x * m[ind]
+                x_out = res
+
+            '''
+            resized_images = [x]
+            for t in range(self.attention_depth - 1):
+                resized_images.append(self.dpool(resized_images[-1]))
+
             results = []
             for ind, t in enumerate(resized_images):
+
                 results.append(self.attentions[ind](t) * self.unets[ind](t))
             end_res = F.upsample_nearest(results[0], x.shape[2:])
             for t in results[1:]:
                 end_res += F.upsample_nearest(t, x.shape[2:])
             x_out = end_res
-
+            '''
         else:
             x_out = self.m1(x)
         return x_out
