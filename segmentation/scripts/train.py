@@ -124,7 +124,7 @@ def main():
                                     ENCODER=args.encoder,
                                     ARCHITECTURE=Architecture(args.architecture), PROCESSES=args.processes,
                                     PADDING_VALUE=args.padding_value,
-                                    CUSTOM_MODEL=custom_model)
+                                    CUSTOM_MODEL=custom_model, IMAGEMAX_AREA=args.scale_area)
             trainer = Network(setting, color_map=map)
             trainer.train()
             model_paths.append(model_path)
@@ -132,9 +132,9 @@ def main():
 
     else:
         train_dataset = XMLDataset(train, map, transform=compose([base_line_transform()]),
-                                   mask_generator=MaskGenerator(settings=settings))
+                                   mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area)
         test_dataset = XMLDataset(test, map, transform=compose([base_line_transform()]),
-                                  mask_generator=MaskGenerator(settings=settings))
+                                  mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area)
         model_path = args.output
 
         custom_model = None
@@ -160,7 +160,7 @@ def main():
                                 OPTIMIZER=Optimizers(args.optimizer), BATCH_ACCUMULATION=args.batch_accumulation,
                                 ENCODER=args.encoder,
                                 ARCHITECTURE=Architecture(args.architecture), PROCESSES=args.processes,
-                                CUSTOM_MODEL=custom_model, PADDING_VALUE=args.padding_value)
+                                CUSTOM_MODEL=custom_model, PADDING_VALUE=args.padding_value, IMAGEMAX_AREA=args.scale_area)
 
         trainer = Network(setting, color_map=map)
         trainer.train()
