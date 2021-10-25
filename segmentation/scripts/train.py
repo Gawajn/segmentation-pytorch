@@ -80,6 +80,9 @@ def main():
     parser.add_argument('--encoder_filter', nargs='+', type=int, help="filter of the encoder of the custom model. Number of filters should be equal to enocder depth + 1")
     parser.add_argument('--decoder_filter', nargs='+', type=int, help="filter of the decoder of the custom model. Number of filters should be equal to encoder depth + 1")
     parser.add_argument('--encoder_attention_filter', nargs='+', type=int, help="filter of the attention encoder of the custom model. Number of filters should be equal to attention depth + 1")
+    parser.add_argument("--no_weight_sharing", action="store_false", help="weight sharing of models for scaled images")
+    parser.add_argument("--scaled_image_input", action="store_true", help="scaled image input")
+
     parser.add_argument('--seed', default=123, type=int)
     args = parser.parse_args()
     train = dirs_to_pandaframe(args.train_input, args.train_mask)
@@ -116,6 +119,8 @@ def main():
                     STRIDE=args.custom_model_stride_size,
                     PADDING=args.custom_model_padding_size,
                     KERNEL_SIZE=args.custom_model_kernel_size,
+                    WEIGHT_SHARING=args.no_weight_sharing,
+                    SCALED_IMAGE_INPUT=args.scaled_image_input,
                 )
             setting = TrainSettings(CLASSES=len(map), TRAIN_DATASET=train_dataset, VAL_DATASET=test_dataset,
                                     OUTPUT_PATH=model_path,
@@ -152,6 +157,8 @@ def main():
                 STRIDE=args.custom_model_stride_size,
                 PADDING=args.custom_model_padding_size,
                 KERNEL_SIZE=args.custom_model_kernel_size,
+                WEIGHT_SHARING=args.no_weight_sharing,
+                SCALED_IMAGE_INPUT=args.scaled_image_input,
             )
 
         setting = TrainSettings(CLASSES=len(map), TRAIN_DATASET=train_dataset, VAL_DATASET=test_dataset,

@@ -105,6 +105,10 @@ def main():
         while True:
             p_map, scale_factor = ensemble(file, scale_area=args.scale_area,
                                            additional_scale_factor=scale_factor_multiplier)
+            #from matplotlib import pyplot as plt
+            #image2 = np.argmax(p_map, axis=-1)
+            #plt.imshow(image2)
+            #plt.show()
             baselines = extract_baselines_from_probability_map(p_map, processes=args.processes)
             image = img.resize((int(scale_factor * img.size[0]), int(scale_factor * img.size[1])))
             img = img.convert('RGB')

@@ -1,6 +1,6 @@
 from segmentation.modules import Architecture
-from segmentation.dataset import MaskDataset
-from typing import NamedTuple, Tuple, List
+from segmentation.dataset import MaskDataset, XMLDataset
+from typing import NamedTuple, Tuple, List, Union
 from segmentation.optimizer import Optimizers
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -26,6 +26,8 @@ class CustomModelSettings:
     CHANNELS_IN: int = 3
     CHANNELS_OUT: int = 16
     ATTENTION: bool = True
+    WEIGHT_SHARING: bool = True
+    SCALED_IMAGE_INPUT: bool = False
 
     def get_kwargs(self):
         return {
@@ -42,13 +44,15 @@ class CustomModelSettings:
             "decoder_filter": self.DECODER_FILTER,
             "attention_encoder_filter": self.ATTENTION_ENCODER_FILTER,
             "attention_encoder_depth": self.ATTENTION_ENCODER_DEPTH,
+            "weight_sharing": self.WEIGHT_SHARING,
+            "scaled_images_input": self.SCALED_IMAGE_INPUT,
         }
 
 
 @dataclass
 class TrainSettings:
-    TRAIN_DATASET: MaskDataset
-    VAL_DATASET: MaskDataset
+    TRAIN_DATASET: Union[MaskDataset, XMLDataset]
+    VAL_DATASET: Union[MaskDataset, XMLDataset]
 
     CLASSES: int
     OUTPUT_PATH: str
@@ -101,7 +105,7 @@ class TrainSettings:
 
 
 class PredictorSettings(NamedTuple):
-    PREDICT_DATASET: MaskDataset = None
+    PREDICT_DATASET: Union[MaskDataset, XMLDataset] = None
     MODEL_PATH: str = None
     PROCESSES: int = 4
 
