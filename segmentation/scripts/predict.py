@@ -85,6 +85,8 @@ def main():
                         help="If the average line_height of an document is smaller then the specified value, "
                              "the document is scaled up an processed again on the new resolution")
     parser.add_argument("--marginalia_postprocessing", action="store_true", help="Enables marginalia postprocessing")
+    parser.add_argument("--cpu", action="store_true", help="Use cpu")
+    parser.add_argument("--tta", action="store_true", help="Use predefined Tta-pipeline")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--processes", type=int, default=8)
 
@@ -93,7 +95,11 @@ def main():
     networks = []
     bboxs = None
     for x in args.load:
-        p_setting = PredictorSettings(MODEL_PATH=x)
+        tta = None
+        if args.tta:
+            from segmentation.settings import transforms
+            tta = transforms
+        p_setting = PredictorSettings(MODEL_PATH=x, CPU=args.cpu, tta=tta)
         network = Network(p_setting)
         networks.append(network)
     ensemble = Ensemble(networks)
@@ -102,6 +108,7 @@ def main():
         logger.info("Processing: {} \n".format(file))
         img = Image.open(file)  # open image
         scale_factor_multiplier = 1
+        from matplotlib import pyplot as plt
         while True:
             p_map, scale_factor = ensemble(file, scale_area=args.scale_area,
                                            additional_scale_factor=scale_factor_multiplier)
@@ -133,7 +140,11 @@ def main():
 
                     if (args.max_line_height is not None and np.median(heights) > args.max_line_height) or \
                             (args.min_line_height is not None and np.median(heights) < args.min_line_height):
-                        scale_factor_multiplier = (args.max_line_height - 7) / np.median(heights)
+                        if args.max_line_height:
+                            scale_factor_multiplier = (args.max_line_height - 7) / np.median(heights)
+                        if args.min_line_height:
+                            scale_factor_multiplier = args.min_line_height / np.median(heights)
+
                         logger.info("Resizing image Avg:{}, Med:{} \n".format(np.mean(heights), np.median(heights)))
                         continue
                 if args.layout_prediction:

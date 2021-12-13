@@ -1,3 +1,5 @@
+import ttach
+
 from segmentation.modules import Architecture
 from segmentation.dataset import MaskDataset, XMLDataset
 from typing import NamedTuple, Tuple, List, Union
@@ -108,8 +110,20 @@ class PredictorSettings(NamedTuple):
     PREDICT_DATASET: Union[MaskDataset, XMLDataset] = None
     MODEL_PATH: str = None
     PROCESSES: int = 4
+    CPU: bool = None
+    tta: Union[None, ttach.base.Compose] = None
 
 
 class BaseLineDetectionSettings(NamedTuple):
     MAXDISTANCE = 100
     ANGLE = 10
+
+
+import ttach as tta
+
+transforms = tta.Compose(
+    [
+        tta.Scale(scales=[0.95, 1, 1.05]),
+        tta.HorizontalFlip(),
+    ]
+)

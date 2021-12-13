@@ -262,6 +262,7 @@ class Network(object):
         decoder_channel: Tuple[int, ...] = None
         padding_value = None
         custom_model = None
+        device = None
         if isinstance(settings, PredictorSettings):
 
             import os
@@ -282,6 +283,8 @@ class Network(object):
             if self.settings.PREDICT_DATASET is not None:
                 self.settings.PREDICT_DATASET.preprocessing = sm.encoders.get_preprocessing_fn(encoder if encoder else
                                                                                                json_file["ENCODER"])
+            if self.settings.CPU:
+                device = "cpu"
         elif isinstance(settings, TrainSettings):
             custom_model = self.settings.CUSTOM_MODEL
             encoder = self.settings.ENCODER
@@ -292,7 +295,8 @@ class Network(object):
             padding_value = self.settings.PADDING_VALUE
             self.settings.TRAIN_DATASET.preprocessing = sm.encoders.get_preprocessing_fn(self.settings.ENCODER)
             self.settings.VAL_DATASET.preprocessing = sm.encoders.get_preprocessing_fn(self.settings.ENCODER)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info('Device: {} is used for training/prediction\n'.format(device))
         custom_model = custom_model if custom_model else json_file["CUSTOM_MODEL"]
         self.device = torch.device(device)
@@ -457,14 +461,6 @@ class Network(object):
             return
         # from torch.utils import data
         transforms = tta_aug
-        if tta_aug is None:
-            import ttach as tta
-            transforms = tta.Compose(
-                [
-                    tta.Scale(scales=[0.95, 1, 1.05]),
-                    tta.HorizontalFlip(),
-                ]
-            )
         self.model.eval()
         preprocessing_fn = sm.encoders.get_preprocessing_fn(self.encoder)
         image, pseudo_mask = process(image=image, mask=image, rgb=rgb, preprocessing=preprocessing_fn,
@@ -478,29 +474,37 @@ class Network(object):
 
             outputs = []
             o_shape = data.shape
-            for transformer in transforms:
-                augmented_image = transformer.augment_image(data)
-                shape = list(augmented_image.shape)[2:]
-                padded = pad(augmented_image, self.padding_value)  ## 2**5
+            if tta_aug:
+                for transformer in transforms:
+                    augmented_image = transformer.augment_image(data)
+                    shape = list(augmented_image.shape)[2:]
+                    padded = pad(augmented_image, self.padding_value)  ## 2**5
+
+                    input = padded.float()
+                    output = self.model(input)
+                    output = unpad(output, shape)
+                    reversed = transformer.deaugment_mask(output)
+                    reversed = torch.nn.functional.interpolate(reversed, size=list(o_shape)[2:], mode="nearest")
+                    logger.debug("original: {} input: {}, padded: {} unpadded {} output {} \n".format(str(o_shape),
+                                                                                                      str(shape), str(
+                            list(augmented_image.shape)), str(list(output.shape)), str(list(reversed.shape))))
+                    outputs.append(reversed)
+                stacked = torch.stack(outputs)
+                output = torch.mean(stacked, dim=0)
+            else:
+                shape = list(data.shape)[2:]
+                padded = pad(data, self.padding_value)  ## 2**5
 
                 input = padded.float()
                 output = self.model(input)
                 output = unpad(output, shape)
-                reversed = transformer.deaugment_mask(output)
-                reversed = torch.nn.functional.interpolate(reversed, size=list(o_shape)[2:], mode="nearest")
-                logger.debug("original: {} input: {}, padded: {} unpadded {} output {} \n".format(str(o_shape),
-                                                                                                  str(shape), str(
-                        list(augmented_image.shape)), str(list(output.shape)), str(list(reversed.shape))))
-                outputs.append(reversed)
-            stacked = torch.stack(outputs)
-            output = torch.mean(stacked, dim=0)
             out = output.data.cpu().numpy()
             out = np.transpose(out, (0, 2, 3, 1))
             out = np.squeeze(out)
 
             return out
 
-    def predict_single_image_by_path(self, path, rgb=True, preprocessing=True, tta_aug=None, scale_area=1000000,
+    def predict_single_image_by_path(self, path, rgb=True, preprocessing=True, scale_area=1000000,
                                      additional_scale_factor=None):
         from PIL import Image
         from segmentation.dataset import get_rescale_factor, rescale_pil
@@ -511,8 +515,8 @@ class Network(object):
         if additional_scale_factor is not None:
             rescale_factor = rescale_factor * additional_scale_factor
         image = np.array(rescale_pil(image, rescale_factor, 1))
-
-        return self.predict_single_image(image, rgb=rgb, preprocessing=preprocessing, tta_aug=tta_aug), rescale_factor
+        tta = self.settings.tta
+        return self.predict_single_image(image, rgb=rgb, preprocessing=preprocessing, tta_aug=tta), rescale_factor
 
 
 def plot_list(lsit):
