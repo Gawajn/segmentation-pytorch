@@ -8,6 +8,7 @@ import scipy
 from skimage.filters import try_all_threshold, threshold_local
 from PIL import Image, ImageDraw
 from segmentation.postprocessing.baseline_extraction import extract_baselines_from_probability_map
+from segmentation.postprocessing.dewarp import Dewarper
 from segmentation.postprocessing.layout_analysis import analyse, connect_bounding_box, get_top_of_baselines
 from segmentation.settings import PredictorSettings
 from segmentation.util import PerformanceCounter
@@ -87,6 +88,7 @@ def main():
     parser.add_argument("--marginalia_postprocessing", action="store_true", help="Enables marginalia postprocessing")
     parser.add_argument("--cpu", action="store_true", help="Use cpu")
     parser.add_argument("--tta", action="store_true", help="Use predefined Tta-pipeline")
+    parser.add_argument("--dewarp", action="store_true", help="Dewarp image using the detected baselines")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--processes", type=int, default=8)
 
@@ -204,9 +206,20 @@ def main():
 
             if args.debug:
                 from matplotlib import pyplot
-                array = np.array(img)
-                pyplot.imshow(array)
+
+
+                from matplotlib import pyplot
+                array1 = np.array(img)
+                pyplot.imshow(array1)
                 pyplot.show()
+                if args.dewarp:
+                    dewarper = Dewarper(img.size, baselines=baselines)
+                    images = dewarper.dewarp([img])
+                    array = np.array(images[0])
+                    f, ax = pyplot.subplots(1, 2, True, True)
+                    ax[0].imshow(array1)
+                    ax[1].imshow(array)
+                    pyplot.show()
             break
             pass
 
