@@ -133,7 +133,6 @@ class Dewarper:
         self.shape = shape
         self.dst_grid = griddify(shape_to_rect(self.shape), 10, 30)
         print(self.dst_grid)
-        print("123")
         logger.debug("Transforming grid)")
         self.src_grid = transform_grid(self.dst_grid, baselines, self.shape)
         print(self.src_grid)
