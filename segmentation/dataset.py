@@ -20,6 +20,7 @@ from segmentation.util import gray_to_rgb, rgb2gray
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
 import math
 from segmentation.preprocessing.basic_binarizer import gauss_threshold
+from segmentation.util import logger
 
 from segmentation.preprocessing.ocrupus import binarize
 
@@ -69,7 +70,7 @@ def default_preprocessing(x):
 
 
 def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, color_map=None,
-            binary_augmentation=True, ocropy=True):
+            binary_augmentation=True, ocropy=True, crop=False, crop_x=512, crop_y=512):
     if rgb:
         image = gray_to_rgb(image)
     result = {"image": image}
@@ -87,6 +88,11 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
 
     if augmentation is not None:
         result = augmentation(**result)
+    if crop:
+
+        result = compose([[albu.RandomCrop(
+            crop_y, crop_x, p=1
+        )]])(**result)
 
     if augmentation is not None and binary_augmentation:
         from segmentation.preprocessing.basic_binarizer import gauss_threshold
@@ -97,9 +103,9 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
                 binary = binarize(result["image"].astype("float64")).astype("uint8")*255
                 gray = gray_to_rgb(binary)
                 result["image"] = gray_to_rgb(gray)
-            else:
-                image = rgb2gray(result["image"]).astype(np.uint8)
-                result["image"] = gray_to_rgb(gauss_threshold(image))
+        if ran == 2:
+            image = rgb2gray(result["image"]).astype(np.uint8)
+            result["image"] = gray_to_rgb(gauss_threshold(image))
 
     if apply_preprocessing is not None and apply_preprocessing:
         result["image"] = preprocessing(result["image"])
@@ -169,7 +175,7 @@ class MemoryDataset(Dataset):
 
 class XMLDataset(Dataset):
     def __init__(self, df, color_map, mask_generator: BaseMaskGenerator, preprocessing=default_preprocessing,
-                 transform=None, rgb=True, scale_area=1000000):
+                 transform=None, rgb=True, scale_area=1000000, crop=False, crop_x=512, crop_y=512):
         self.df = df
         self.color_map = color_map
         self.augmentation = transform
@@ -178,6 +184,11 @@ class XMLDataset(Dataset):
         self.rgb = rgb
         self.mask_generator = mask_generator
         self.scale_area = scale_area
+        self.crop = crop
+        self.crop_x = crop_x
+        self.crop_Y = crop_y
+        logger.info("123 {} \n".format(self.crop))
+        logger.info("123 {} \n".format(crop))
 
     def __getitem__(self, item, apply_preprocessing=True):
         image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
@@ -190,7 +201,9 @@ class XMLDataset(Dataset):
             image = image.astype("uint8") * 255
         image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
                               apply_preprocessing=apply_preprocessing, augmentation=self.augmentation,
-                              binary_augmentation=True, color_map=self.color_map)
+                              binary_augmentation=True, color_map=self.color_map, crop=self.crop,
+                              crop_x=self.crop_x,
+                              crop_y=self.crop_Y)
         return image, mask, torch.tensor(item)
 
     def __len__(self):

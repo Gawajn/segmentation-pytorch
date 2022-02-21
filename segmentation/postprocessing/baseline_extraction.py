@@ -119,11 +119,14 @@ def extract_baselines_from_probability_map(image_map: np.array, base_line_index=
 
     #print(image2.shape)
     #image = np.argmax(image2, axis=-1)
+    #from matplotlib import pyplot as plt
+    #plt.imshow(image.astype(int))
+    #plt.show()
     return extract_baselines(image_map=image, base_line_index=base_line_index,
                              base_line_border_index=base_line_border_index, original=original, processes=processes)
 
 
-def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_index=2, original=None, processes=1):
+def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_index=2, original=None, processes=1, connection_width=100):
     from scipy.ndimage.measurements import label
 
     base_ind = np.where(image_map == base_line_index)
@@ -162,7 +165,7 @@ def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_i
     if np.sum(matrix) == 0:
         print("Empty Image")
         return
-    t = DBSCAN(eps=100, min_samples=1, metric="precomputed").fit(matrix)
+    t = DBSCAN(eps=connection_width, min_samples=1, metric="precomputed").fit(matrix)
 
     ccs = []
     for x in np.unique(t.labels_):

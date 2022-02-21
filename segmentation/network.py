@@ -463,7 +463,7 @@ class Network(object):
         transforms = tta_aug
         self.model.eval()
         preprocessing_fn = sm.encoders.get_preprocessing_fn(self.encoder)
-        image, pseudo_mask = process(image=image, mask=image, rgb=rgb, preprocessing=preprocessing_fn,
+        image, pseudo_mask = process(image=image, mask=image, rgb=rgb, preproceclasssing=preprocessing_fn,
                                      apply_preprocessing=preprocessing, augmentation=None, color_map=None,
                                      binary_augmentation=False)
         # data = image

@@ -82,6 +82,22 @@ def main():
     parser.add_argument('--encoder_attention_filter', nargs='+', type=int, help="filter of the attention encoder of the custom model. Number of filters should be equal to attention depth + 1")
     parser.add_argument("--no_weight_sharing", action="store_false", help="weight sharing of models for scaled images")
     parser.add_argument("--scaled_image_input", action="store_true", help="scaled image input")
+    parser.add_argument('--batch_size_train',type=int, default=1,
+                        help='batch_size')
+    parser.add_argument('--batch_size_val', type=int, default=1,
+                        help='batch_size')
+    parser.add_argument('--crop_train',  action="store_true",
+                        help='crops train images')
+    parser.add_argument('--crop_val',  action="store_true",
+                        help='crops train images')
+    parser.add_argument('--crop_x_train',  type=int, default=512,
+                        help='crops train images')
+    parser.add_argument('--crop_y_train',  type=int, default=512,
+                        help='crops train images')
+    parser.add_argument('--crop_x_val',  type=int, default=512,
+                        help='crops train images')
+    parser.add_argument('--crop_y_val',  type=int, default=512,
+                        help='crops train images')
 
     parser.add_argument('--seed', default=123, type=int)
     args = parser.parse_args()
@@ -100,9 +116,11 @@ def main():
             train_fold = train.iloc[x[0]].reset_index(drop=True)
             test_fold = train.iloc[x[1]].reset_index(drop=True)
             train_dataset = XMLDataset(train_fold, map, transform=compose([base_line_transform()]),
-                                       mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area)
+                                       mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area,
+                                       crop=args.crop_train, crop_x=args.crop_x_train, crop_y=args.crop_y_train)
             test_dataset = XMLDataset(test_fold, map, transform=compose([base_line_transform()]),
-                                      mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area)
+                                      mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area,
+                                      crop=args.crop_val, crop_x=args.crop_x_val, crop_y=args.crop_y_val)
             model_path = args.output + "_fold{}".format(ind)
             custom_model = None
             if args.custom_model:
@@ -126,6 +144,7 @@ def main():
                                     OUTPUT_PATH=model_path,
                                     MODEL_PATH=args.load, EPOCHS=args.n_epoch,
                                     OPTIMIZER=Optimizers(args.optimizer), BATCH_ACCUMULATION=args.batch_accumulation,
+                                    TRAIN_BATCH_SIZE=args.batch_size_train, VAL_BATCH_SIZE=args.batch_size_val,
                                     ENCODER=args.encoder,
                                     ARCHITECTURE=Architecture(args.architecture), PROCESSES=args.processes,
                                     PADDING_VALUE=args.padding_value,
@@ -137,9 +156,11 @@ def main():
 
     else:
         train_dataset = XMLDataset(train, map, transform=compose([base_line_transform()]),
-                                   mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area)
+                                   mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area,
+                                   crop=args.crop_train, crop_x=args.crop_x_train, crop_y=args.crop_y_train)
         test_dataset = XMLDataset(test, map, transform=compose([base_line_transform()]),
-                                  mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area)
+                                  mask_generator=MaskGenerator(settings=settings), scale_area=args.scale_area,
+                                  crop=args.crop_val, crop_x=args.crop_x_val, crop_y=args.crop_y_val)
         model_path = args.output
 
         custom_model = None
@@ -165,9 +186,11 @@ def main():
                                 OUTPUT_PATH=args.output,
                                 MODEL_PATH=args.load, EPOCHS=args.n_epoch,
                                 OPTIMIZER=Optimizers(args.optimizer), BATCH_ACCUMULATION=args.batch_accumulation,
+                                TRAIN_BATCH_SIZE=args.batch_size_train, VAL_BATCH_SIZE=args.batch_size_val,
                                 ENCODER=args.encoder,
                                 ARCHITECTURE=Architecture(args.architecture), PROCESSES=args.processes,
                                 CUSTOM_MODEL=custom_model, PADDING_VALUE=args.padding_value, IMAGEMAX_AREA=args.scale_area)
+
 
         trainer = Network(setting, color_map=map)
         trainer.train()
