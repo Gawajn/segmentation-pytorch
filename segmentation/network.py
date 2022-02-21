@@ -298,7 +298,7 @@ class Network(object):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info('Device: {} is used for training/prediction\n'.format(device))
-        custom_model = custom_model if custom_model else json_file["CUSTOM_MODEL"]
+        custom_model = custom_model if custom_model else json_file["CUSTOM_MODEL"] if json_file else None
         self.device = torch.device(device)
         self.model_params = None
         if not custom_model:

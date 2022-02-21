@@ -88,11 +88,6 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
 
     if augmentation is not None:
         result = augmentation(**result)
-    if crop:
-
-        result = compose([[albu.RandomCrop(
-            crop_y, crop_x, p=1
-        )]])(**result)
 
     if augmentation is not None and binary_augmentation:
         from segmentation.preprocessing.basic_binarizer import gauss_threshold
@@ -106,7 +101,11 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
         if ran == 2:
             image = rgb2gray(result["image"]).astype(np.uint8)
             result["image"] = gray_to_rgb(gauss_threshold(image))
+    if crop:
 
+        result = compose([[albu.RandomCrop(
+            crop_y, crop_x, p=1
+        )]])(**result)
     if apply_preprocessing is not None and apply_preprocessing:
         result["image"] = preprocessing(result["image"])
     result = compose([post_transforms()])(**result)
