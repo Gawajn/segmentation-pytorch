@@ -11,6 +11,7 @@ from segmentation.dataset import label_to_colors, XMLDataset
 from typing import Union, Tuple
 import numpy as np
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
+import os
 
 from matplotlib import pyplot as plt
 from segmentation.util import logger
@@ -264,9 +265,8 @@ class Network(object):
         custom_model = None
         device = None
         if isinstance(settings, PredictorSettings):
-
-            import os
             if os.path.exists(os.path.splitext(settings.MODEL_PATH)[0] + '.meta'):
+
                 with open(str(os.path.splitext(settings.MODEL_PATH)[0]) + '.meta', 'r') as f:
                     for x in f.readlines():
                         x = x.strip('\n')
@@ -463,7 +463,7 @@ class Network(object):
         transforms = tta_aug
         self.model.eval()
         preprocessing_fn = sm.encoders.get_preprocessing_fn(self.encoder)
-        image, pseudo_mask = process(image=image, mask=image, rgb=rgb, preproceclasssing=preprocessing_fn,
+        image, pseudo_mask = process(image=image, mask=image, rgb=rgb, preprocessing=preprocessing_fn,
                                      apply_preprocessing=preprocessing, augmentation=None, color_map=None,
                                      binary_augmentation=False)
         # data = image

@@ -95,17 +95,17 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
         ran = np.random.randint(1, 5)
         if ran == 1:
             if ocropy:
-                binary = binarize(result["image"].astype("float64")).astype("uint8")*255
+                binary = binarize(result["image"].astype("float64")).astype("uint8") * 255
                 gray = gray_to_rgb(binary)
                 result["image"] = gray_to_rgb(gray)
         if ran == 2:
             image = rgb2gray(result["image"]).astype(np.uint8)
             result["image"] = gray_to_rgb(gauss_threshold(image))
     if crop:
-
         result = compose([[albu.RandomCrop(
             crop_y, crop_x, p=1
         )]])(**result)
+        ## albumentations.augmentations.crops.transforms.RandomResizedCrop
     if apply_preprocessing is not None and apply_preprocessing:
         result["image"] = preprocessing(result["image"])
     result = compose([post_transforms()])(**result)
@@ -113,7 +113,8 @@ def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, 
 
 
 class MaskDataset(Dataset):
-    def __init__(self, df, color_map, preprocessing=default_preprocessing, transform=None, rgb=True, scale_area=1000000):
+    def __init__(self, df, color_map, preprocessing=default_preprocessing, transform=None, rgb=True,
+                 scale_area=1000000, crop=False, crop_x=512, crop_y=512):
         self.df = df
         self.color_map = color_map
         self.augmentation = transform
@@ -143,7 +144,8 @@ class MaskDataset(Dataset):
 
 
 class MemoryDataset(Dataset):
-    def __init__(self, df, color_map=None, preprocessing=default_preprocessing, transform=None, rgb=True, scale_area=1000000):
+    def __init__(self, df, color_map=None, preprocessing=default_preprocessing, transform=None, rgb=True,
+                 scale_area=1000000):
         self.df = df
         self.color_map = color_map
         self.augmentation = transform
@@ -186,8 +188,6 @@ class XMLDataset(Dataset):
         self.crop = crop
         self.crop_x = crop_x
         self.crop_Y = crop_y
-        logger.info("123 {} \n".format(self.crop))
-        logger.info("123 {} \n".format(crop))
 
     def __getitem__(self, item, apply_preprocessing=True):
         image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
@@ -316,11 +316,12 @@ def base_line_transform():
             albu.ToGray(),
             albu.CLAHE()]),
         albu.RandomScale(),
+
     ]
     return result
 
 
-def resize_transforms(image_size=480):
+def resize_transforms(image_size=512):
     BORDER_CONSTANT = 0
     pre_size = int(image_size * 1.5)
 
@@ -417,12 +418,22 @@ def show_random(df, transforms=None) -> None:
     show(index, image, mask, transforms)
     plt.show()
 
+def show_image_batch(img_list, mask_list):
+    num = len(img_list)
+    f, ax = plt.subplots(2, num, True, True)
+    for i in range(num):
+        ax[0][i].imshow(img_list[i].numpy().transpose([2,1,0]))
+        ax[1][i].imshow(mask_list[i].numpy().transpose([1,0]))
 
-def train(model, device, train_loader, optimizer, epoch, accumulation_steps=8):
+    plt.show()
+def train(model, device, train_loader, optimizer, epoch, accumulation_steps=1):
     model.train()
     total_train = 0
     correct_train = 0
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target, id) in enumerate(train_loader):
+        print(data)
+        show_image_batch(data, target)
+
         data, target = data.to(device), target.to(device, dtype=torch.int64)
         optimizer.zero_grad()
         output = model(data.float())
@@ -454,7 +465,7 @@ def test(model, device, test_loader):
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for data, target in test_loader:
+        for data, target, id in test_loader:
             data, target = data.to(device), target.to(device, dtype=torch.int64)
             output = model(data)
             test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
@@ -479,24 +490,27 @@ def track():
             pass
     '''
 
-
+def collate_fn_variable_sized_images(batch):
+    data = [item[0] for item in batch]
+    target = [item[1] for item in batch]
+    return [data, target]
 if __name__ == '__main__':
     'https://github.com/catalyst-team/catalyst/blob/master/examples/notebooks/segmentation-tutorial.ipynb'
     a = dirs_to_pandaframe(
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/image/'],
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/page/'])
+        ['/home/alexanderh/Documents/datasets/baselines/train/image/'],
+        ['/home/alexanderh/Documents/datasets/baselines/train/page/'])
 
     b = dirs_to_pandaframe(
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/test/image/'],
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/test/page/'])
+        ['/home/alexanderh/Documents/datasets/baselines/test/image/'],
+        ['/home/alexanderh/Documents/datasets/baselines/test/page/'])
 
     map = load_image_map_from_file(
-        '/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/dataset-test/image_map.json')
+        '/home/alexanderh/Documents/datasets/baselines/image_map.json')
 
     settings = MaskSetting(MASK_TYPE=MaskType.BASE_LINE, PCGTS_VERSION=PCGTSVersion.PCGTS2013, LINEWIDTH=5,
                            BASELINELENGTH=10)
-    dt = XMLDataset(a, map, transform=compose([post_transforms()]), mask_generator=MaskGenerator(settings=settings))
-    d_test = XMLDataset(b, map, transform=compose([post_transforms()]), mask_generator=MaskGenerator(settings=settings))
+    dt = XMLDataset(a, map, transform=compose([base_line_transform(),resize_transforms() ]), mask_generator=MaskGenerator(settings=settings))
+    d_test = XMLDataset(b, map, transform=compose([base_line_transform()]), mask_generator=MaskGenerator(settings=settings))
 
     import torch
     import torch.nn as nn
@@ -504,16 +518,16 @@ if __name__ == '__main__':
     import torch.nn.functional as F
     from segmentation.model import UNet, AttentionUnet
 
-    model1 = UNet(in_channels=3,
-                  out_channels=8,
+    model = UNet(in_channels=3,
+                  out_channels=16,
                   n_class=len(map),
                   kernel_size=3,
                   padding=1,
                   stride=1)
 
-    model = AttentionUnet(
+    model1 = AttentionUnet(
         in_channels=3,
-        out_channels=8,
+        out_channels=16,
         n_class=len(map),
         kernel_size=3,
         padding=1,
@@ -529,7 +543,7 @@ if __name__ == '__main__':
 
     from torch.utils import data
 
-    train_loader = data.DataLoader(dataset=dt, batch_size=1, shuffle=True, num_workers=5)
+    train_loader = data.DataLoader(dataset=dt, batch_size=5, shuffle=True, num_workers=5)
     test_loader = data.DataLoader(dataset=d_test, batch_size=1, shuffle=False)
 
     for epoch in range(1, 3):
