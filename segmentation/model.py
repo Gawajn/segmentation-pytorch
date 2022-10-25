@@ -125,7 +125,6 @@ class UNet(nn.Module):
         #                              padding, stride))
         #    self.up.append(UpConv(2 ** i * out_channels, 2 ** (i - 1) * out_channels, 2 ** (i - 1) * out_channels,
         #                          kernel_size, padding, stride))
-
         if activation is not None:
             self.out = nn.Conv2d(out_channels, n_class, kernel_size, padding, stride)
 
@@ -146,6 +145,7 @@ class UNet(nn.Module):
             x_out = F.log_softmax(self.out(res_u[-1]), 1)
         else:
             x_out = res_u[-1]
+            #x_out = self.out(res_u[-1])
         return x_out
 
 

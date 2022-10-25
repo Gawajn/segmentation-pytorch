@@ -69,8 +69,8 @@ def main():
                         help="load models and use it for inference")
     parser.add_argument("--image_path", type=str, nargs="*", default=[],
                         help="load models and use it for inference")
-    parser.add_argument("--scale_area", type=int, default=10000000,
-                        help="max pixel amount of an image")
+    parser.add_argument("--scale_area", type=int, default=1000000000,
+                        help="max pixel amount in an image")
     parser.add_argument("--output_path_debug_images", type=str, default=None, help="Directory of the debug images")
     parser.add_argument("--cpu", action="store_true", help="Use cpu")
     parser.add_argument("--tta", action="store_true", help="Use predefined Tta-pipeline")
@@ -101,28 +101,25 @@ def main():
                                            additional_scale_factor=scale_factor_multiplier)
             from matplotlib import pyplot as plt
             image2 = np.argmax(p_map, axis=-1)
-            #plt.imshow(image2)
-            #plt.show()
             image = img.resize((int(scale_factor * img.size[0]), int(scale_factor * img.size[1])))
+            mask = Image.fromarray(image2.astype(np.bool))
+            mask = mask.resize((int(scale_factor * mask.size[0]), int(scale_factor * mask.size[1])))
+
+            mask = mask.convert('RGB')
+
             img = image.convert('RGB')
             draw = ImageDraw.Draw(img)
             #from matplotlib import pyplot as plt
-            f, ax = plt.subplots(1, 2, True, True)
-            ax[0].imshow(img)
-            #map = scipy.special.softmax(p_map, axis=-1)
-            #ax[1].imshow(img)
-            ax[1].imshow(image2)
-
+            #f, ax = plt.subplots(1, 2, True, True)
+            #ax[0].imshow(img)
+            #ax[1].imshow(mask)
             plt.show()
             if args.output_path_debug_images:
                 basename = "debug_" + os.path.basename(file)
                 file_path = os.path.join(args.output_path_debug_images, basename)
-                img.save(file_path)
+                mask.save(file_path)
 
             if args.debug:
-                from matplotlib import pyplot
-
-
                 from matplotlib import pyplot
                 array1 = np.array(img)
                 pyplot.imshow(array1)
