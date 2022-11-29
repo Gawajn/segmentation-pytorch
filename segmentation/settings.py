@@ -1,19 +1,20 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union, Tuple, Dict
 
 import loguru
 from dataclasses_json import dataclass_json
 
-from segmentation.dataset import default_preprocessing
 from segmentation.modules import Architecture
 import segmentation_models_pytorch as sm
 
 from segmentation.optimizer import Optimizers
+from mashumaro.mixins.json import DataClassJSONMixin
+from serde import serde
 
-@dataclass_json
+
 @dataclass
-class CustomModelSettings:
+class CustomModelSettings(DataClassJSONMixin):
     classes: int
     encoder_filter: List[int]
     decoder_filter: List[int]
@@ -52,42 +53,36 @@ class CustomModelSettings:
         }
 
 
-@dataclass_json
 @dataclass
 class NetworkTrainSettings:
     optimizer: Optimizers = Optimizers.ADAM
     learningrate_encoder: float = 1.e-5
     learningrate_decoder: float = 1.e-4
     learningrate_seghead: float = 1.e-4
-    padding_value: int = 32
-
     batch_accumulation: int = 1
 
     processes: int = 0
 
 
-@dataclass_json
 @dataclass
-class PredefinedNetworkSettings:
-    architecture: Architecture = None
-    encoder: str = None
+class PredefinedNetworkSettings(DataClassJSONMixin):
+    classes: int
+    architecture: Architecture = Architecture.UNET
+    encoder: str = "efficientnet-b3"
 
-    classes: int = None
-    encoder_depth: int = None
-    decoder_channel: Tuple[int, ...] = None
+    encoder_depth: int = 5
+    decoder_channel: Tuple[int, ...] = (256,128,64,32,16)
 
 
-@dataclass_json
 @dataclass
-class ClassSpec:
+class ClassSpec(DataClassJSONMixin):
     label: int
     name: str
     color: Union[int, List[int]]
 
 
-@dataclass_json
 @dataclass
-class ColorMap:
+class ColorMap(DataClassJSONMixin):
     class_spec: List[ClassSpec]
 
     def __iter__(self):
@@ -102,13 +97,13 @@ class ColorMap:
             return cls.from_json(f.read())
 
 
-
-@dataclass_json
 @dataclass
-class Preprocessingfunction:
-    name: str
+class Preprocessingfunction(DataClassJSONMixin):
+    name: str = "default"
 
     def get_preprocessing_function(self):
+        from segmentation.dataset import default_preprocessing
+
         if self.name == "default":
             return default_preprocessing
         else:
@@ -119,10 +114,9 @@ class Preprocessingfunction:
                 raise e
 
 
-@dataclass_json
 @dataclass
-class ProcessingSettings:
-    input_padding_value: int
+class ProcessingSettings(DataClassJSONMixin):
+    input_padding_value: int = 32
     rgb: int = True
     preprocessing: Preprocessingfunction = field(
         default_factory=lambda: Preprocessingfunction(name="default"))
@@ -131,9 +125,8 @@ class ProcessingSettings:
     scale_max_area: Optional[int] = 1_000_000  # TODO implement
 
 
-@dataclass_json
 @dataclass
-class ModelConfiguration:
+class ModelConfiguration(DataClassJSONMixin):
     use_custom_model: bool
     network_settings: Optional[PredefinedNetworkSettings]
     custom_model_settings: Optional[CustomModelSettings]
@@ -141,11 +134,10 @@ class ModelConfiguration:
     preprocessing_settings: ProcessingSettings
 
 
-@dataclass_json
 @dataclass
-class ModelFile:
+class ModelFile(DataClassJSONMixin):
     model_configuration: ModelConfiguration
-    statistics: dict
+    statistics: Optional[Dict[str, float]]
 
     @classmethod
     def from_file(cls, path: Path) -> 'ModelFile':

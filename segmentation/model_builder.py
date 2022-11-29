@@ -35,28 +35,22 @@ class ModelBuilderPredefined(ModelBuilderBase):
         self.device = device
 
     def get_model(self) -> Network:
-        def get_model(architecture, kwargs):
-            if architecture == architecture.FPN:
-                kwargs.pop("decoder_use_batchnorm")
-            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        model_params = self.settings.architecture.get_architecture_params()
+        model_params['classes'] = self.settings.classes
 
-            architecture = architecture.get_architecture()(**kwargs)
-            return architecture
+        model_params['encoder_name'] = self.settings.encoder
+        model_params['encoder_depth'] = self.settings.encoder_depth
 
-        encoder = self.settings.encoder
-        architecture = self.settings.architecture
-        classes = self.settings.classes
-        encoder_depth = self.settings.encoder_depth
+        if 'decoder_use_batchnorm' in model_params:
+            model_params['decoder_use_batchnorm'] = False
 
-        architecture = architecture
-        model_params = architecture.get_architecture_params()
-        model_params['classes'] = classes
-        model_params['decoder_use_batchnorm'] = False
-        model_params['encoder_name'] = encoder
-        model_params['encoder_depth'] = encoder_depth
-        #   self.model_params['decoder_channels'] = json_file["DECODER_CHANNELS"] if json_file else decoder_channel
-        model = get_model(architecture, model_params)
-        model.to(self.device),
+        if 'decoder_channels' in model_params:
+            model_params['decoder_channels'] = self.settings.decoder_channel
+
+        kwargs = {k: v for k, v in model_params.items() if v is not None}
+        model = self.settings.architecture.get_architecture()(**kwargs)
+
+        model.to(self.device)
         return Network(model, self.preprocessing_settings, self.device)
 
 
@@ -96,6 +90,5 @@ class ModelBuilderLoad(ModelBuilderBase):
         if type(model_weights) is str:
             model_weights = Path(model_weights)
         json_f = model_weights.with_suffix(".json")
-        with open(json_f) as f:
-            mf = ModelFile.from_json(f.read())
+        mf = ModelFile.from_file(json_f)
         return cls(mf, model_weights, device)

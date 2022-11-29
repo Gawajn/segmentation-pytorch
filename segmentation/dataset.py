@@ -16,6 +16,8 @@ from typing import List
 from skimage.morphology import remove_small_holes
 import albumentations as albu
 import gc
+
+from segmentation.settings import ColorMap
 from segmentation.util import gray_to_rgb, rgb2gray
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
 import math
@@ -35,7 +37,7 @@ def to_categorical(y, num_classes, torch=True):
     return one_hot
 
 
-def color_to_label(mask, colormap: dict):
+def color_to_label(mask, colormap: ColorMap):
     out = np.zeros(mask.shape[0:2], dtype=np.int32)
 
     if mask.ndim == 2:
@@ -45,9 +47,10 @@ def color_to_label(mask, colormap: dict):
         return mask[:, :, 0].astype(np.int32) / 255
     mask = mask.astype(np.uint32)
     mask = 256 * 256 * mask[:, :, 0] + 256 * mask[:, :, 1] + mask[:, :, 2]
-    for color, label in colormap.items():
+    for cspec in colormap:
+        color, label = cspec.color, cspec.label
         color_1d = 256 * 256 * color[0] + 256 * color[1] + color[2]
-        out += (mask == color_1d) * label[0]
+        out += (mask == color_1d) * label
     return out
 
 
@@ -175,7 +178,7 @@ class MemoryDataset(Dataset):
 
 
 class XMLDataset(Dataset):
-    def __init__(self, df, color_map, mask_generator: BaseMaskGenerator, preprocessing=default_preprocessing,
+    def __init__(self, df, color_map: ColorMap, mask_generator: BaseMaskGenerator, preprocessing=default_preprocessing,
                  transform=None, rgb=True, scale_area=1000000, crop=False, crop_x=512, crop_y=512):
         self.df = df
         self.color_map = color_map
@@ -307,7 +310,7 @@ def hard_transforms():
     return result
 
 
-def base_line_transform():
+def default_transform():
     result = [
         albu.HorizontalFlip(),
         albu.RandomGamma(),
@@ -508,8 +511,8 @@ if __name__ == '__main__':
 
     settings = MaskSetting(MASK_TYPE=MaskType.BASE_LINE, PCGTS_VERSION=PCGTSVersion.PCGTS2013, LINEWIDTH=5,
                            BASELINELENGTH=10)
-    dt = XMLDataset(a, map, transform=compose([base_line_transform(),resize_transforms() ]), mask_generator=MaskGenerator(settings=settings))
-    d_test = XMLDataset(b, map, transform=compose([base_line_transform()]), mask_generator=MaskGenerator(settings=settings))
+    dt = XMLDataset(a, map, transform=compose([default_transform(), resize_transforms()]), mask_generator=MaskGenerator(settings=settings))
+    d_test = XMLDataset(b, map, transform=compose([default_transform()]), mask_generator=MaskGenerator(settings=settings))
 
     model = Model
 

@@ -37,7 +37,7 @@ def unpad(tensor, o_shape):
     return output
 
 
-def test(model, device, test_loader, criterion, padding_value=32):
+def test(model, device, test_loader, criterion, padding_value=32, debug_color_map=None):
     model.eval()
     test_loss = 0
     correct = 0
@@ -53,8 +53,11 @@ def test(model, device, test_loader, criterion, padding_value=32):
 
             output = model(input)
             output = unpad(output, shape)
+            #if batch_idx % 250 == 0:
+            if debug_color_map: debug_img(output, target, data, debug_color_map)
             test_loss += criterion(output, target)
-            _, predicted = torch.max(output.data, 1)
+            #_, predicted = torch.max(output.data, 1)
+            predicted = torch.argmax(output.data,1)
 
             total += target.nelement()
             correct += predicted.eq(target.data).sum().item()
@@ -64,7 +67,7 @@ def test(model, device, test_loader, criterion, padding_value=32):
 
     test_loss /= len(test_loader.dataset)
 
-    loguru.logger.info('Test set: Average loss: {:.4f}, Length of Test Set: {} (Accuracy{:.6f}%)'.format(
+    loguru.logger.info('Test set: Average loss: {:.4f}, Length of Test Set: {} (Accuracy {:.6f}%)'.format(
         test_loss, len(test_loader.dataset),
         100. * correct / total))
 
@@ -152,11 +155,11 @@ class TrainCallback(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def on_train_epoch_end(self, epoch, acc):
+    def on_train_epoch_end(self, epoch, acc, loss):
         pass
 
     @abc.abstractmethod
-    def on_val_epoch_end(self, epoch, acc):
+    def on_val_epoch_end(self, epoch, acc, loss):
         pass
 
 def debug_img(mask, target, original, color_map: ColorMap):
@@ -222,8 +225,8 @@ class NetworkTrainer(object):
             input = padded.float()
 
             output = model(input)
-            if batch_idx % 250 == 0:
-                debug_img(output, target, data, self.debug_color_map)
+            #if batch_idx % 250 == 0:
+            #    debug_img(output, target, data, self.debug_color_map)
 
             output = unpad(output, shape)
             loss = self.criterion(output, target)
@@ -231,7 +234,7 @@ class NetworkTrainer(object):
             acc_loss += float(loss)
             loss.backward()
 
-            # _, predicted = torch.max(output.data, 1)
+            #_, predicted = torch.max(output.data, 1)
             predicted = torch.argmax(output.data, 1)
             total_train += target.nelement()
             correct_train += predicted.eq(target.data).sum().item()
@@ -253,7 +256,7 @@ class NetworkTrainer(object):
             gc.collect()
 
         for cb in self.callbacks:
-            cb.on_train_epoch_end(current_epoch, acc=train_accuracy)
+            cb.on_train_epoch_end(current_epoch, acc=train_accuracy, loss=acc_loss / len(train_loader))
 
     def train_epochs(self, train_loader: data.DataLoader, val_loader: data.DataLoader, n_epoch: int, lr_schedule=None):
         criterion = nn.CrossEntropyLoss()
@@ -262,10 +265,10 @@ class NetworkTrainer(object):
         for epoch in tqdm(range(0, n_epoch)):
             self.train_epoch(train_loader, epoch)
             accuracy, loss = test(self.network.model, self.device, val_loader, criterion=criterion,
-                                  padding_value=self.network.proc_settings.input_padding_value)
+                                  padding_value=self.network.proc_settings.input_padding_value, debug_color_map=self.debug_color_map)
 
             for cb in self.callbacks:
-                cb.on_val_epoch_end(epoch=epoch, acc=accuracy)
+                cb.on_val_epoch_end(epoch=epoch, acc=accuracy, loss=loss)
 
 
 @dataclass

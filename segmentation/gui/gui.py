@@ -735,19 +735,19 @@ if __name__ == "__main__":
 
     map = load_image_map_from_file(
         '/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/dataset-test/image_map.json')
-    from segmentation.dataset import base_line_transform
+    from segmentation.dataset import default_transform
 
     settings = MaskSetting(MASK_TYPE=MaskType.BASE_LINE, PCGTS_VERSION=PCGTSVersion.PCGTS2013, LINEWIDTH=5,
                            BASELINELENGTH=10)
-    dt = XMLDataset(c, map, transform=compose([base_line_transform()]),
+    dt = XMLDataset(c, map, transform=compose([default_transform()]),
                     mask_generator=MaskGenerator(settings=settings))
-    d_test = XMLDataset(c, map, transform=compose([base_line_transform()]),
+    d_test = XMLDataset(c, map, transform=compose([default_transform()]),
                         mask_generator=MaskGenerator(settings=settings))
     import pandas as pd
 
     pd.set_option('display.max_colwidth', -1)  # or 199
     d_predict = MaskDataset(f, map)
-    # transform=compose([base_line_transform()]))  # transform=compose([base_line_transform()]))
+    # transform=compose([default_transform()]))  # transform=compose([default_transform()]))
     from segmentation.settings import TrainSettings
 
     setting = TrainSettings(CLASSES=len(map), TRAIN_DATASET=dt, VAL_DATASET=d_test,

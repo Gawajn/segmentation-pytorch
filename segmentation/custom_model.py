@@ -227,10 +227,13 @@ class AttentionUnet(nn.Module):
             if len(self.attentions) > 1:
                 for ind, t in enumerate(resized_images):
                     att_m = self.attentions[ind](t)
-                    up_att_m = F.upsample_nearest(att_m, x.shape[2:])
+                    #up_att_m = F.upsample_nearest(att_m, x.shape[2:])
+                    up_att_m = F.interpolate(att_m, x.shape[2:], mode="nearest")  # TODO: verify if this is the same
+
                     attention_maps.append(up_att_m)
                     u_m = self.unets[ind](t)
-                    up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                    #up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                    up_u_m = F.interpolate(u_m, x.shape[2:], mode="nearest")
                     u_maps.append(up_u_m)
 
                 m = torch.nn.functional.softmax(torch.stack(attention_maps).float(), dim=0)
@@ -243,10 +246,12 @@ class AttentionUnet(nn.Module):
             else:
                 for ind, t in enumerate(resized_images):
                     att_m = self.attentions[0](t)
-                    up_att_m = F.upsample_nearest(att_m, x.shape[2:])
+                    #up_att_m = F.upsample_nearest(att_m, x.shape[2:])
+                    up_att_m = F.interpolate(att_m, x.shape[2:], mode="nearest")
                     attention_maps.append(up_att_m)
                     u_m = self.unets[0](t)
-                    up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                    #up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                    up_u_m = F.interpolate(u_m, x.shape[2:], mode="nearest")
                     u_maps.append(up_u_m)
 
                 m = torch.nn.functional.softmax(torch.stack(attention_maps).float(), dim=0)
@@ -266,7 +271,9 @@ class AttentionUnet(nn.Module):
                 resized_images.append(self.dpool(resized_images[-1]))
             for ind, t in enumerate(resized_images):
                 u_m = self.unets[0](t)
-                up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                #up_u_m = F.upsample_nearest(u_m, x.shape[2:])
+                up_u_m = F.interpolate(u_m, x.shape[2:], mode="nearest")
+
                 u_maps.append(up_u_m)
             for ind, x in enumerate(u_maps):
                 if res is None:

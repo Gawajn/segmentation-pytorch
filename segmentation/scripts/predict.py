@@ -206,9 +206,6 @@ def main():
 
             if args.debug:
                 from matplotlib import pyplot
-
-
-                from matplotlib import pyplot
                 array1 = np.array(img)
                 pyplot.imshow(array1)
                 pyplot.show()

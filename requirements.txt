@@ -20,9 +20,8 @@ shapely
 future
 scikit-learn
 dataclasses
-dataclasses_json
 scikit-learn
 scipy
 loguru
 git+https://gitlab2.informatik.uni-wuerzburg.de/nof36hn/binarizer-doxa.git#egg=doxapy
-pyserde
+mashumaro
