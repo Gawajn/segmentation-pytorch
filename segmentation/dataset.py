@@ -1,4 +1,6 @@
+import PIL.Image
 import skimage
+import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import pandas as pd
@@ -12,9 +14,7 @@ import random
 from matplotlib import pyplot as plt
 from typing import List
 from skimage.morphology import remove_small_holes
-from skimage.transform import rescale, resize
 import albumentations as albu
-import torch
 import gc
 from segmentation.util import gray_to_rgb, rgb2gray
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
@@ -228,7 +228,7 @@ class PredictDataset(Dataset):
         image = np.array(rescale_pil(image, rescale_factor, 1))
         mask = image
         image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
-                              apply_preprocessing=apply_preprocessing, augmentation=None, binary_augmentation=True,
+                              apply_preprocessing=apply_preprocessing, augmentation=None, binary_augmentation=False,
                               color_map=self.color_map)
         return image, mask, torch.tensor(item)
 
@@ -431,7 +431,6 @@ def train(model, device, train_loader, optimizer, epoch, accumulation_steps=1):
     total_train = 0
     correct_train = 0
     for batch_idx, (data, target, id) in enumerate(train_loader):
-        print(data)
         show_image_batch(data, target)
 
         data, target = data.to(device), target.to(device, dtype=torch.int64)
@@ -512,11 +511,19 @@ if __name__ == '__main__':
     dt = XMLDataset(a, map, transform=compose([base_line_transform(),resize_transforms() ]), mask_generator=MaskGenerator(settings=settings))
     d_test = XMLDataset(b, map, transform=compose([base_line_transform()]), mask_generator=MaskGenerator(settings=settings))
 
+    model = Model
+
+
+
+
+
+
+
     import torch
     import torch.nn as nn
     import torch.optim as optim
     import torch.nn.functional as F
-    from segmentation.model import UNet, AttentionUnet
+    from segmentation.custom_model import UNet, AttentionUnet
 
     model = UNet(in_channels=3,
                   out_channels=16,

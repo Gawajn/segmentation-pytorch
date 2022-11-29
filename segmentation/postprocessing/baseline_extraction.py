@@ -151,8 +151,11 @@ def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_i
         distance_func = partial(calculate_distance, ccs=ccs, maximum_angle=maximum_angle,
                                 baseline_border_image=baseline_border)
         indexes_ccs = list(range(len(ccs)))
-        with multiprocessing.Pool(processes=processes, maxtasksperchild=100) as p:
-            out = list(p.map(distance_func, indexes_ccs))
+        if processes is not None and processes > 1:
+            with multiprocessing.Pool(processes=processes, maxtasksperchild=100) as p:
+                out = list(p.map(distance_func, indexes_ccs))
+        else:
+            out = list(map(distance_func, indexes_ccs))
         for x in out:
             indexes, values = x
             distance_matrix[indexes] = values

@@ -8,3 +8,4 @@ def to_grayscale(image):
         return gray.astype(np.uint8)
     else:
         return image.astype(np.uint8) * 255
+

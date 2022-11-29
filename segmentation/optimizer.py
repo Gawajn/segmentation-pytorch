@@ -14,6 +14,8 @@ class Optimizers(enum.Enum):
     RALAMB = 'ralamb'
     RANGER = 'ranger'
     RANGERLARS = 'rangerlars'
+    SGD = 'sgd'
+    RMSPROP = 'rmsprop'
 
     def getOptimizer(self):
         return {'adam': torch.optim.Adam,
@@ -21,6 +23,8 @@ class Optimizers(enum.Enum):
                 'radam': RAdam,
                 'ranger': Ranger,
                 'rangerlars': Over9000,
+                'sgd': torch.optim.SGD,
+                'rmsprop': torch.optim.RMSprop
                 }[self.value]
 
 
