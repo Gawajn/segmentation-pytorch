@@ -7,7 +7,6 @@ from typing import List
 from segmentation.postprocessing.data_classes import BboxCluster, BaselineResult
 from segmentation.network import Network
 from segmentation.postprocessing.baseline_extraction import extract_baselines_from_probability_map
-from segmentation.settings import PredictorSettings
 import numpy as np
 from sklearn.cluster import DBSCAN
 from PIL import Image, ImageDraw
@@ -439,42 +438,3 @@ def get_top_alternative(image, baseline, threshold=0.1, kernel=3):
     return list(zip(indexes[1] - height, indexes[0])), height
 
 
-if __name__ == '__main__':
-    files = [
-        "/mnt/sshfs/scratch/Datensets_Bildverarbeitung/page_segmentation/OCR-D/images/reinkingk_policey_1653_0016.png"]
-    model_paths = ["/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/adam_unet_efficientnet-b3_40_1.torch"]
-    ''',
-     "/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/adam_unet_efficientnet-b5_20_1.torch",
-     "/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/adam_unet_efficientnet-b4_20_1.torch",
-     "/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/adam_unet_inceptionresnetv2_20_1.torch",
-     "/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/adam_unet_resnet50_20_1.torch"]
-    '''
-    networks = []
-    from segmentation.scripts.predict import Ensemble
-    from PIL import Image, ImageDraw, ImageFont
-
-    files0 = list(itertools.chain.from_iterable(
-        [glob.glob("/mnt/sshfs/scratch/Datensets_Bildverarbeitung/page_segmentation/OCR-D/images/*.png")]))
-    files1 = list(itertools.chain.from_iterable(
-        [glob.glob("/mnt/sshfs/scratch/Datensets_Bildverarbeitung/page_segmentation/norbert_fischer/lgt/bin/*.png")]))
-    files2 = list(itertools.chain.from_iterable(
-        [glob.glob("/mnt/sshfs/scratch/Datensets_Bildverarbeitung/page_segmentation/narren/GW5049/images/*.png")]))
-    for x in model_paths:
-        p_setting = PredictorSettings(MODEL_PATH=x)
-        network = Network(p_setting)
-        networks.append(network)
-    ensemble = Ensemble(networks)
-    for file in files0:
-        p_map, scale_factor = ensemble(file, scale_area=1000000)
-        baselines = extract_baselines_from_probability_map(p_map)
-
-        image = Image.open(file)
-        image = image.resize((int(scale_factor * image.size[0]), int(scale_factor * image.size[1])))
-
-        from segmentation.preprocessing.basic_binarizer import gauss_threshold
-        from segmentation.preprocessing.util import to_grayscale
-
-        grayscale = to_grayscale(np.array(image))
-        binary = gauss_threshold(image=grayscale) / 255
-
-        analyse(baselines=baselines, image=binary, image2=image)

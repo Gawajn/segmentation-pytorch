@@ -4,19 +4,17 @@ import warnings
 import glob
 import os
 
-import scipy
-from skimage.filters import try_all_threshold, threshold_local
 from PIL import Image, ImageDraw
-from segmentation.postprocessing.baseline_extraction import extract_baselines_from_probability_map
-from segmentation.postprocessing.dewarp import Dewarper
-from segmentation.postprocessing.layout_analysis import analyse, connect_bounding_box, get_top_of_baselines
-from segmentation.settings import PredictorSettings
-from segmentation.util import PerformanceCounter
+from tqdm import tqdm
+
+from segmentation.model_builder import ModelBuilderLoad
+from segmentation.network import EnsemblePredictor
+from segmentation.network_postprocessor import NetworkMaskPostProcessor, NetworkBaselinePostProcessor
+from segmentation.preprocessing.source_image import SourceImage
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import itertools
 import numpy as np
-from segmentation.util import logger
 
 
 def dir_path(string):
@@ -53,31 +51,23 @@ class Ensemble:
 
 
 def main():
-    from segmentation.network import TrainSettings, dirs_to_pandaframe, load_image_map_from_file, MaskSetting, MaskType, \
-        PCGTSVersion, XMLDataset, Network, compose, MaskGenerator, MaskDataset
-    from segmentation.settings import Architecture
-    from segmentation.modules import ENCODERS
     colors = [(255, 0, 0),
               (0, 255, 0),
               (0, 0, 255),
               (255, 255, 0),
               (0, 255, 255),
               (255, 0, 255)]
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--load", type=str, nargs="*", default=[],
-                        help="load models and use it for inference")
-    parser.add_argument("--image_path", type=str, nargs="*", default=[],
-                        help="load models and use it for inference")
-    parser.add_argument("--scale_area", type=int, default=1000000,
-                        help="max pixel amount of an image")
-    parser.add_argument("--output_path_debug_images", type=str, default=None, help="Directory of the debug images")
-    parser.add_argument("--layout_prediction", action="store_true", help="Generates Layout of the page "
-                                                                         "based on the baselines")
-    parser.add_argument("--show_baselines", action="store_true", help="Draws baseline to the debug image")
-    parser.add_argument("--show_layout", action="store_true", help="Draws layout regions to the debug image")
+                        help="load models and use it for inference (specify .torch file)")
+    parser.add_argument("--image_path", type=str, nargs="*", default=[], help="load models and use it for inference")
+    parser.add_argument("--scale_area", type=bool, action="store_true", help="Enable image scaling")
+    parser.add_argument("--scale_area_size", type=int, help="max pixel amount of an image")
+
     parser.add_argument("--output_xml", action="store_true", help="Outputs Xml Files")
     parser.add_argument("--output_xml_path", type=str, default=None, help="Directory of the XML output")
+    parser.add_argument("--mode", choices=["xml_baseline", "xml_region", "mask"], required=True)
+
     parser.add_argument("--max_line_height", type=int, default=None,
                         help="If the average line_height of an document is bigger then the specified value, "
                              "the document is scaled down an processed again on the new resolution. "
@@ -85,140 +75,68 @@ def main():
     parser.add_argument("--min_line_height", type=int, default=None,
                         help="If the average line_height of an document is smaller then the specified value, "
                              "the document is scaled up an processed again on the new resolution")
-    parser.add_argument("--marginalia_postprocessing", action="store_true", help="Enables marginalia postprocessing")
     parser.add_argument("--cpu", action="store_true", help="Use cpu")
     parser.add_argument("--tta", action="store_true", help="Use predefined Tta-pipeline")
     parser.add_argument("--dewarp", action="store_true", help="Dewarp image using the detected baselines")
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--show_result", action="store_true")
+    parser.add_argument("--output_path_debug_images", type=str, default=None, help="Directory of the debug images")
+
     parser.add_argument("--processes", type=int, default=8)
 
     args = parser.parse_args()
-    files = list(itertools.chain.from_iterable([glob.glob(x) for x in args.image_path]))
-    networks = []
-    bboxs = None
-    for x in args.load:
-        tta = None
-        if args.tta:
-            from segmentation.settings import transforms
-            tta = transforms
-        p_setting = PredictorSettings(MODEL_PATH=x, CPU=args.cpu, tta=tta)
-        network = Network(p_setting)
-        networks.append(network)
-    ensemble = Ensemble(networks)
-    for file in files:
-        baselines = None
-        logger.info("Processing: {} \n".format(file))
-        img = Image.open(file)  # open image
-        scale_factor_multiplier = 1
-        from matplotlib import pyplot as plt
-        while True:
-            p_map, scale_factor = ensemble(file, scale_area=args.scale_area,
-                                           additional_scale_factor=scale_factor_multiplier)
-            #from matplotlib import pyplot as plt
-            #image2 = np.argmax(p_map, axis=-1)
-            #plt.imshow(image2)
-            #plt.show()
-            baselines = extract_baselines_from_probability_map(p_map, processes=args.processes)
-            image = img.resize((int(scale_factor * img.size[0]), int(scale_factor * img.size[1])))
-            img = img.convert('RGB')
-            draw = ImageDraw.Draw(img)
-            #from matplotlib import pyplot as plt
-            #f, ax = plt.subplots(1, 3, True, True)
-            #ax[0].imshow(image)
-            #map = scipy.special.softmax(p_map, axis=-1)
-            #ax[1].imshow(map[:,:,1])
-            #ax[2].imshow(map[:,:,2])
+    image_list = list(itertools.chain.from_iterable([glob.glob(x) for x in args.image_path]))
+    base_model_files = [ModelBuilderLoad.from_disk(model_weights=i, device="cuda") for i in args.load]
+    base_models = [i.get_model() for i in base_model_files]
+    base_configs = [i.get_model_configuration() for i in base_model_files]
+    preprocessing_settings = [i.get_model_configuration().preprocessing_settings for i in base_model_files]
+    if args.scale_area:
+        for i in preprocessing_settings:
+            i.scale_max_area = args.scale_area_size
+            i.scale_predict = args.scale_area
 
-            #plt.show()
-            if baselines is not None:
-                from segmentation.preprocessing.ocrupus import binarize
-                binary = (binarize(np.array(image).astype("float64"))).astype("uint8")
-                with PerformanceCounter(function_name="Baseline Height Calculation mp"):
-                    out = get_top_of_baselines(baselines, image=1 - binary, processes=1)
-                heights = [x[2] for x in out]
+    predictor = EnsemblePredictor(base_models, preprocessing_settings)
+    config = base_configs[0]
 
-                if (args.max_line_height is not None or args.min_line_height is not None) \
-                        and scale_factor_multiplier == 1:
-
-                    if (args.max_line_height is not None and np.median(heights) > args.max_line_height) or \
-                            (args.min_line_height is not None and np.median(heights) < args.min_line_height):
-                        if args.max_line_height:
-                            scale_factor_multiplier = (args.max_line_height - 7) / np.median(heights)
-                        if args.min_line_height:
-                            scale_factor_multiplier = args.min_line_height / np.median(heights)
-
-                        logger.info("Resizing image Avg:{}, Med:{} \n".format(np.mean(heights), np.median(heights)))
-                        continue
-                if args.layout_prediction:
-                    with PerformanceCounter(function_name="Baseline Height Calculation "):
-                        bboxs = analyse(baselines=baselines, image=(1 - binary), image2=image)
-                    from segmentation.postprocessing.marginialia_detection import marginalia_detection
-                    if args.marginalia_postprocessing:
-                        bboxs = marginalia_detection(bboxs, image)
-                        baselines = [bl.baseline for cluster in bboxs for bl in cluster.baselines]
-                        bboxs = analyse(baselines=baselines, image=(1 - binary), image2=image)
-                    bboxs = connect_bounding_box(bboxs)
-                    bboxs = [x.scale(1 / scale_factor) for x in bboxs]
-                    if args.show_layout:
-                        for ind, x in enumerate(bboxs):
-                            if x.bbox:
-                                draw.line(x.bbox + [x.bbox[0]], fill=colors[ind % len(colors)], width=3)
-                                draw.text((x.bbox[0]), "type:{}".format(x.baselines[0].cluster_type))
-
-            scale_baselines(baselines, 1 / scale_factor)
-            if args.show_baselines:
-                if baselines is not None and len(baselines) > 0:
-
-                    for ind, x in enumerate(baselines):
-                        t = list(itertools.chain.from_iterable(x))
-                        a = t[::]
-                        if args.show_baselines:
-                            draw.line(a, fill=colors[ind % len(colors)], width=4)
-
+    if args.mode == "mask" or args.mode == "xml_region":
+        nmaskpred = NetworkMaskPostProcessor(predictor, config.color_map)
+        for img_path in tqdm(image_list):
+            simg = SourceImage.load(img_path)
+            mask = nmaskpred.predict_image(simg)
+            if args.show_result:
+                mask.generated_mask.show()
             if args.output_path_debug_images:
-                basename = "debug_" + os.path.basename(file)
+                basename = "debug_" + os.path.basename(img_path)
                 file_path = os.path.join(args.output_path_debug_images, basename)
-                img.save(file_path)
+                mask.save(file_path)
 
+    if args.mode == "xml_baseline":
+        nbaselinepred = NetworkBaselinePostProcessor(predictor, config.color_map)
+        for img_path in tqdm(image_list):
+            simg = SourceImage.load(img_path)
+            image = SourceImage.from_numpy(simg.array())
+            draw = ImageDraw.Draw(image)
+
+            result = nbaselinepred.predict_image(simg)
+            for ind, x in enumerate(result.base_lines):
+                t = list(itertools.chain.from_iterable(x))
+                a = t[::]
+                if args.show_result:
+                    draw.line(a, fill=colors[ind % len(colors)], width=4)
+                if args.output_path_debug_images:
+                    basename = "debug_" + os.path.basename(img_path)
+                    file_path = os.path.join(args.output_path_debug_images, basename)
+                    image.save(file_path)
             if args.output_xml and args.output_xml_path is not None:
                 from segmentation.gui.xml_util import TextRegion, BaseLine, TextLine, XMLGenerator
                 regions = []
-
-                if bboxs is not None:
-                    for box in bboxs:
-                        text_lines = []
-                        for b_line in box.baselines:
-                            text_region_coord = b_line.baseline + list(reversed(
-                                [(x, y - b_line.height) for x, y in b_line.baseline]))
-                            text_lines.append(TextLine(coords=text_region_coord, baseline=BaseLine(b_line.baseline)))
-                        regions.append(TextRegion(text_lines, coords=box.bbox))
-
-                    xml_gen = XMLGenerator(img.size[0], img.size[1], os.path.basename(file), regions=regions)
-                    xml_gen.save_textregions_as_xml(args.output_xml_path)
-                elif baselines is not None:
+                if result.base_lines is not None:
                     text_lines = []
-                    for b_line in baselines:
+                    for b_line in result.base_lines:
                         text_lines.append(TextLine(coords=None, baseline=BaseLine(b_line)))
                     regions.append(TextRegion(text_lines, coords=None))
 
-                xml_gen = XMLGenerator(img.size[0], img.size[1], os.path.basename(file), regions=regions)
+                xml_gen = XMLGenerator(image.size[0], image.size[1], os.path.basename(img_path), regions=regions)
                 xml_gen.save_textregions_as_xml(args.output_xml_path)
-
-            if args.debug:
-                from matplotlib import pyplot
-                array1 = np.array(img)
-                pyplot.imshow(array1)
-                pyplot.show()
-                if args.dewarp:
-                    dewarper = Dewarper(img.size, baselines=baselines)
-                    images = dewarper.dewarp([img])
-                    array = np.array(images[0])
-                    f, ax = pyplot.subplots(1, 2, True, True)
-                    ax[0].imshow(array1)
-                    ax[1].imshow(array)
-                    pyplot.show()
-            break
-            pass
 
 
 if __name__ == "__main__":

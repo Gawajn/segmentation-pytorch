@@ -4,7 +4,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from segmentation.model_builder import ModelBuilderLoad
-from segmentation.network import NetworkMaskPredictor
+from segmentation.network import NetworkMaskPostProcessor
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.settings import ColorMap, ClassSpec
 
@@ -19,7 +19,7 @@ if __name__ == "__main__":
                      ClassSpec(label=1, name="Baseline", color=[255, 0, 255]),
                      ClassSpec(label=2, name="BaselineBorder", color=[255, 255, 0])])
 
-    nmaskpred = NetworkMaskPredictor(net, config, cmap)
+    nmaskpred = NetworkMaskPostProcessor(net, config, cmap)
 
     for img_path in tqdm(image_list):
         simg = SourceImage.load(img_path)

@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass, asdict
-from typing import List
+from typing import List, Optional, Any
 
 import PIL.Image
 import loguru
@@ -53,11 +53,11 @@ def test(model, device, test_loader, criterion, padding_value=32, debug_color_ma
 
             output = model(input)
             output = unpad(output, shape)
-            #if batch_idx % 250 == 0:
+            # if batch_idx % 250 == 0:
             if debug_color_map: debug_img(output, target, data, debug_color_map)
             test_loss += criterion(output, target)
-            #_, predicted = torch.max(output.data, 1)
-            predicted = torch.argmax(output.data,1)
+            # _, predicted = torch.max(output.data, 1)
+            predicted = torch.argmax(output.data, 1)
 
             total += target.nelement()
             correct += predicted.eq(target.data).sum().item()
@@ -80,6 +80,7 @@ class NetworkBase:
         pass
 
 
+"""
 class EnsembleNetwork(NetworkBase):
     def __init__(self, nets: List[NetworkBase]):
         assert len(nets) > 0, "Must get at least one network"
@@ -92,6 +93,7 @@ class EnsembleNetwork(NetworkBase):
         else:
             res = np.stack(res, axis=0)
             return np.mean(res, axis=0)
+"""
 
 
 class Network(NetworkBase):
@@ -162,18 +164,19 @@ class TrainCallback(abc.ABC):
     def on_val_epoch_end(self, epoch, acc, loss):
         pass
 
+
 def debug_img(mask, target, original, color_map: ColorMap):
     if color_map is not None:
         from matplotlib import pyplot as plt
-        #mean = [0.485, 0.456, 0.406]
-        #stds = [0.229, 0.224, 0.225]
+        # mean = [0.485, 0.456, 0.406]
+        # stds = [0.229, 0.224, 0.225]
 
         mask = torch.argmax(mask, dim=1)
         mask = torch.squeeze(mask).cpu()
         original = original.permute(0, 2, 3, 1)
         original = torch.squeeze(original).cpu().numpy()
-        #original = original * stds
-        #original = original + mean
+        # original = original * stds
+        # original = original + mean
         original = original * 255
         original = original.astype(int)
         f, ax = plt.subplots(1, 3, True, True)
@@ -184,8 +187,10 @@ def debug_img(mask, target, original, color_map: ColorMap):
 
         plt.show()
 
+
 class NetworkTrainer(object):
-    def __init__(self, network: Network, settings: NetworkTrainSettings, device, callbacks: List[TrainCallback] = None, debug_color_map: ColorMap = None):
+    def __init__(self, network: Network, settings: NetworkTrainSettings, device, callbacks: List[TrainCallback] = None,
+                 debug_color_map: ColorMap = None):
         self.network = network
         self.train_settings = settings
         self.device = device
@@ -225,7 +230,7 @@ class NetworkTrainer(object):
             input = padded.float()
 
             output = model(input)
-            #if batch_idx % 250 == 0:
+            # if batch_idx % 250 == 0:
             #    debug_img(output, target, data, self.debug_color_map)
 
             output = unpad(output, shape)
@@ -234,7 +239,7 @@ class NetworkTrainer(object):
             acc_loss += float(loss)
             loss.backward()
 
-            #_, predicted = torch.max(output.data, 1)
+            # _, predicted = torch.max(output.data, 1)
             predicted = torch.argmax(output.data, 1)
             total_train += target.nelement()
             correct_train += predicted.eq(target.data).sum().item()
@@ -252,7 +257,8 @@ class NetworkTrainer(object):
                 cb.on_batch_end(batch_idx, loss=loss.item(), acc=train_accuracy)
 
             progress_bar.set_description(
-                desc=f"Train E {current_epoch} Loss: {acc_loss / (batch_idx + 1):.4f} Accuracy: {train_accuracy:.2f}%", refresh=False)
+                desc=f"Train E {current_epoch} Loss: {acc_loss / (batch_idx + 1):.4f} Accuracy: {train_accuracy:.2f}%",
+                refresh=False)
             gc.collect()
 
         for cb in self.callbacks:
@@ -265,7 +271,8 @@ class NetworkTrainer(object):
         for epoch in tqdm(range(0, n_epoch)):
             self.train_epoch(train_loader, epoch)
             accuracy, loss = test(self.network.model, self.device, val_loader, criterion=criterion,
-                                  padding_value=self.network.proc_settings.input_padding_value, debug_color_map=self.debug_color_map)
+                                  padding_value=self.network.proc_settings.input_padding_value,
+                                  debug_color_map=self.debug_color_map)
 
             for cb in self.callbacks:
                 cb.on_val_epoch_end(epoch=epoch, acc=accuracy, loss=loss)
@@ -277,17 +284,28 @@ class PredictionResult:
     preprocessed_image: SourceImage
     network_input: np.ndarray
     probability_map: np.ndarray
+    other: Optional[Any] = None
 
 
-class NetworkPredictor:
+class NetworkPredictorBase(abc.ABC):
+    @abc.abstractmethod
+    def predict_image(self, img: SourceImage) -> PredictionResult:
+        pass
+
+    def get_color_map(self) -> ColorMap:
+        pass
+
+
+class NetworkPredictor(NetworkPredictorBase):
 
     @classmethod
-    def from_model_config(cls, network: NetworkBase, mc: ModelConfiguration):
-        return cls(network=network, processing_settings=mc.preprocessing_settings)
+    def from_model_config(cls, network: NetworkBase, mc: ModelConfiguration, tta_aug: ttach.Compose = None):
+        return cls(network=network, processing_settings=mc.preprocessing_settings, tta_aug=tta_aug)
 
-    def __init__(self, network: NetworkBase, processing_settings: ProcessingSettings):
+    def __init__(self, network: NetworkBase, processing_settings: ProcessingSettings, tta_aug: ttach.Compose = None):
         self.network = network
         self.proc_settings = processing_settings
+        self.tta_aug = tta_aug
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         if self.proc_settings.scale_predict:
@@ -301,14 +319,55 @@ class NetworkPredictor:
                            binary_augmentation=False)
         input = input.unsqueeze(0)
 
-        prediction = self.network.predict(input)
+        prediction = self.network.predict(input, tta_aug=self.tta_aug)
 
         return PredictionResult(source_image=img, preprocessed_image=scaled_image, network_input=input,
                                 probability_map=prediction)
 
 
+class EnsemblePredictor(NetworkPredictorBase):
+
+    @classmethod
+    def from_model_config(cls, networks: List[NetworkBase], mcs: List[ModelConfiguration],
+                          tta_aug: ttach.Compose = None):
+        return cls(networks=networks, processing_settings=[mc.preprocessing_settings for mc in mcs], tta_aug=tta_aug)
+
+    def __init__(self, networks: List[NetworkBase], processing_settings: List[ProcessingSettings],
+                 tta_aug: ttach.Compose = None):
+        self.networks = networks
+        self.proc_settings = processing_settings
+        self.tta_aug = tta_aug
+
+    def predict_image(self, img: SourceImage) -> PredictionResult:
+        single_network_prediction_result: List[PredictionResult] = []
+        for network, config in zip(self.networks, self.proc_settings):
+            if config.scale_predict:
+                scaled_image = img.scale_area(config.scale_max_area)
+            else:
+                scaled_image = img
+
+            input, _ = process(image=scaled_image.array(), mask=scaled_image.array(), rgb=config.rgb,
+                               preprocessing=config.preprocessing.get_preprocessing_function(),
+                               apply_preprocessing=True, augmentation=None, color_map=None,
+                               binary_augmentation=False)
+            input = input.unsqueeze(0)
+
+            prediction = network.predict(input, self.tta_aug)
+            single_network_prediction_result.append(PredictionResult(
+                source_image=img,
+                preprocessed_image=scaled_image,
+                network_input=input,
+                probability_map=prediction,
+                other=single_network_prediction_result))
+
+        res = np.stack([i.probability_map for i in single_network_prediction_result], axis=0)
+        prediction = np.mean(res, axis=0)
+        return PredictionResult(source_image=img, preprocessed_image=None, network_input=None,
+                                probability_map=prediction, other=single_network_prediction_result)
+
+
 class NewImageReconstructor:
-    def __init__(self, labeled_image, total_labels=None, background_color=(0,0,0), undefined_color=(255,255,255)):
+    def __init__(self, labeled_image, total_labels=None, background_color=(0, 0, 0), undefined_color=(255, 255, 255)):
         if total_labels is None or total_labels == 0:
             total_labels = int(np.max(labeled_image)) + 1
         self.color_keys = np.tile(np.array(undefined_color, dtype=np.uint8), (total_labels, 1))
@@ -341,39 +400,5 @@ class NewImageReconstructor:
         for cls in color_map:
             nr.label(cls.label, cls.color)
         return nr.get_image()
-
-
-@dataclass
-class MaskPredictionResult:
-    prediction_result: PredictionResult
-    generated_mask: PIL.Image
-
-
-class NetworkMaskPredictor:
-    def __init__(self, network: NetworkBase, model_config: ModelConfiguration, overwrite_color_map: ColorMap = None):
-        self.predictor = NetworkPredictor(network, model_config.preprocessing_settings)
-        self.model_config = model_config
-        if overwrite_color_map:
-            self.color_map = overwrite_color_map
-        else:
-            self.color_map = self.model_config.color_map
-
-    def predict_image(self, img: SourceImage, keep_dim: bool = True) -> PIL.Image:
-        res = self.predictor.predict_image(img)
-
-        # create labeled image from probability map
-        lmap = np.argmax(res.probability_map, axis=-1)
-        mask = NewImageReconstructor.label_to_colors(lmap, self.color_map)
-
-        outimg = PIL.Image.fromarray(mask, mode="RGB")
-
-        if keep_dim:
-            mask = outimg
-        else:
-            mask = outimg.resize(size=(img.get_width(), img.get_height()), resample=PIL.Image.NEAREST)
-
-        mpr = MaskPredictionResult(prediction_result=res, generated_mask=mask)
-        return mpr
-
 
 
