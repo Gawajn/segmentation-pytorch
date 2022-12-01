@@ -126,6 +126,7 @@ def main():
                     basename = "debug_" + os.path.basename(img_path)
                     file_path = os.path.join(args.output_path_debug_images, basename)
                     image.save(file_path)
+
             if args.output_xml and args.output_xml_path is not None:
                 from segmentation.gui.xml_util import TextRegion, BaseLine, TextLine, XMLGenerator
                 regions = []

@@ -117,7 +117,7 @@ class Preprocessingfunction(DataClassJSONMixin):
 @dataclass
 class ProcessingSettings(DataClassJSONMixin):
     input_padding_value: int = 32
-    rgb: int = True
+    rgb: bool = True
     preprocessing: Preprocessingfunction = field(
         default_factory=lambda: Preprocessingfunction(name="default"))
     scale_train: bool = True
