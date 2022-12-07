@@ -87,7 +87,7 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
     loguru.logger.info(
         f'Metric used for model saving: {metric_stats.stats[metric_watcher_index].name} {metric_stats.stats[metric_watcher_index].value():.2f}%')
 
-    return metric_stats.stats[metric_watcher_index].value(), test_loss.data.cpu().numpy()
+    return metric_stats, test_loss.data.cpu().numpy()
 
 
 class NetworkBase:

@@ -257,7 +257,7 @@ def main():
                                     color_map=color_map)
 
         network = ModelBuilderMeta(config, args.device).get_model()
-        mw = ModelWriterCallback(network, config, save_path=Path(args.output_path), prefix=model_prefix)
+        mw = ModelWriterCallback(network, config, save_path=Path(args.output_path), prefix=model_prefix, metric_watcher_index=args.metrics_watcher_index)
         trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(color_map),
                                                                optimizer=Optimizers(args.optimizer),
                                                                learningrate_seghead=args.learning_rate,
