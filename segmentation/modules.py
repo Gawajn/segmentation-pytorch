@@ -4,6 +4,7 @@ from enum import Enum
 
 ENCODERS = smp.encoders.get_encoder_names()
 
+
 class Architecture(Enum):
     FPN = 'fpn'
     UNET = 'unet'
@@ -30,14 +31,12 @@ class Architecture(Enum):
 
     @staticmethod
     def get_all_architectures():
-        return [smp.FPN, smp.Unet, smp.PSPNet, smp.Linknet]
+        return [smp.FPN, smp.Unet, smp.PSPNet, smp.Linknet, smp.DeepLabV3, smp.DeepLabV3Plus, smp.UnetPlusPlus, smp.PAN,
+                smp.MAnet]
 
     def get_architecture_params(self):
         import inspect
-        t = {'fpn': smp.FPN,
-             'unet': smp.Unet,
-             'pspnet': smp.PSPNet,
-             'linknet': smp.Linknet}[self.value]
+        t = self.get_architecture()
         signature = inspect.signature(t.__init__)
         a = dict()
         for name, parameter in signature.parameters.items():
