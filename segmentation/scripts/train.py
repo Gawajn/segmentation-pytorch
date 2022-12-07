@@ -5,6 +5,7 @@ import numpy as np
 import torch.cuda
 
 from segmentation.callback import ModelWriterCallback
+from segmentation.metrics import Metrics, MetricReduction
 from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad
 from segmentation.network import NetworkTrainer
 from segmentation.settings import Architecture, NetworkTrainSettings, Preprocessingfunction, ColorMap, ClassSpec
@@ -49,6 +50,7 @@ def get_default_device():
 
 
 def parse_arguments():
+    # print(dir(NetworkTrainSettings))
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--device", type=str, default=get_default_device())
     parser.add_argument("-L", "--learning_rate", type=float, default=NetworkTrainSettings.learningrate_seghead,
@@ -92,6 +94,16 @@ def parse_arguments():
                         default=ProcessingSettings.input_padding_value)
     parser.add_argument('--optimizer', default=NetworkTrainSettings.optimizer.value, type=str,
                         choices=[x.value for x in list(Optimizers)])
+    #metric settings
+    parser.add_argument('--metrics', default=NetworkTrainSettings.default_metric(), type=str,
+                        choices=[x.value for x in list(Metrics)], nargs='+')
+    parser.add_argument('--metrics_watcher_index', default=0, type=int,
+                        help="Index of metric used for comparing models, default=0")
+    parser.add_argument('--metrics_reduction', default=NetworkTrainSettings.metric_reduction.value, type=str,
+                        choices=[x.value for x in list(MetricReduction)],
+                        help="Metric reduction")
+    parser.add_argument('--metrics_weights', default=None, type=float, nargs="+",
+                        help="Metric class weight, default=None (Only used when using weighted reduction")
 
     # Predefined
     parser.add_argument('--predefined_architecture',
@@ -177,8 +189,8 @@ def main():
         color_map = color_map_load_helper(args.color_map)
     elif args.mode == "xml_baseline":
         color_map = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
-                         ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
-                         ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
+                              ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
+                              ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
     else:
         raise NotImplementedError()
 
@@ -244,10 +256,12 @@ def main():
         network = ModelBuilderMeta(config, args.device).get_model()
 
         mw = ModelWriterCallback(network, config, save_path=Path(args.output_path), prefix=model_prefix)
-        trainer = NetworkTrainer(network, NetworkTrainSettings(optimizer=Optimizers(args.optimizer),
+        trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(color_map),
+                                                               optimizer=Optimizers(args.optimizer),
                                                                learningrate_seghead=args.learning_rate,
                                                                batch_accumulation=args.batch_accumulation,
                                                                processes=args.processes,
+                                                               metrics=[Metrics(x) for x in args.metrics]
 
                                                                ), args.device,
                                  callbacks=[mw], debug_color_map=config.color_map)

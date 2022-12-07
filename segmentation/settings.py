@@ -5,6 +5,7 @@ from typing import Optional, List, Union, Tuple, Dict
 import loguru
 from dataclasses_json import dataclass_json
 
+from segmentation.metrics import MetricReduction, Metrics
 from segmentation.modules import Architecture
 import segmentation_models_pytorch as sm
 
@@ -55,13 +56,21 @@ class CustomModelSettings(DataClassJSONMixin):
 
 @dataclass
 class NetworkTrainSettings:
+    classes: int
     optimizer: Optimizers = Optimizers.ADAM
     learningrate_encoder: float = 1.e-5
     learningrate_decoder: float = 1.e-4
     learningrate_seghead: float = 1.e-4
     batch_accumulation: int = 1
-
+    metric_reduction: MetricReduction = MetricReduction.micro
+    metrics: List[Metrics] = field(default_factory=lambda: [NetworkTrainSettings.default_metric()])
+    watcher_metric_index: int = 0
+    class_weights: List[float] = None
     processes: int = 0
+
+    @staticmethod
+    def default_metric():
+        return Metrics.accuracy
 
 
 @dataclass
@@ -71,7 +80,7 @@ class PredefinedNetworkSettings(DataClassJSONMixin):
     encoder: str = "efficientnet-b3"
 
     encoder_depth: int = 5
-    decoder_channel: Tuple[int, ...] = (256,128,64,32,16)
+    decoder_channel: Tuple[int, ...] = (256, 128, 64, 32, 16)
 
 
 @dataclass
@@ -165,4 +174,3 @@ def color_map_load_helper(path: Path) -> ColorMap:
         pass
 
     raise RuntimeError("Cannot load model file. File doesn't exist or invalid format")
-

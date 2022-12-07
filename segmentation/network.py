@@ -1,5 +1,5 @@
 import abc
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import List, Optional, Any
 
 import PIL.Image
@@ -11,12 +11,15 @@ import torch
 import torch.nn as nn
 from torch.utils import data
 from tqdm import tqdm
+import segmentation_models_pytorch as smp
 
 from segmentation.dataset import process, get_rescale_factor, rescale_pil, label_to_colors
+from segmentation.metrics import Metrics
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.settings import NetworkTrainSettings, ProcessingSettings, ModelConfiguration, ClassSpec, ColorMap
 import numpy as np
 
+from segmentation.stats import MetricStats, EpochStats
 from segmentation.util import PerformanceCounter
 
 
@@ -37,11 +40,14 @@ def unpad(tensor, o_shape):
     return output
 
 
-def test(model, device, test_loader, criterion, padding_value=32, debug_color_map=None):
+def test(model, device, test_loader, criterion, classes, metrics: List[Metrics], metric_reduction,
+         metric_watcher_index=0, class_weights=None, padding_value=32, debug_color_map=None, ):
     model.eval()
     test_loss = 0
     correct = 0
     total = 0
+    metric_stats = EpochStats([MetricStats(name=i.name) for i in metrics])
+
     with torch.no_grad():
         progress_bar = tqdm(enumerate(test_loader), desc="Testing", total=len(test_loader))
         for idx, (data, target, id) in progress_bar:
@@ -59,19 +65,29 @@ def test(model, device, test_loader, criterion, padding_value=32, debug_color_ma
             # _, predicted = torch.max(output.data, 1)
             predicted = torch.argmax(output.data, 1)
 
-            total += target.nelement()
-            correct += predicted.eq(target.data).sum().item()
-            # loguru.logger.info('\r Image [{}/{}'.format(idx * len(data), len(test_loader.dataset)))
+            tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
+                                                   num_classes=classes,
+                                                   mode='multiclass', threshold=None)
+
+            for metric, stats in zip(metrics, metric_stats):
+                acc = metric.getMetric()(tp, fp, fn, tn, class_weights=class_weights,
+                                         reduction=metric_reduction.value)
+                stats.values.append(acc * 100)
+
+            metric_string = " ".join(f"{i.name}: {i.value():.2f}%" for i in metric_stats)
+
             progress_bar.set_description(
-                f"Testing. Loss: {test_loss / (idx + 1) : .4f} Accuracy: {correct / total :.4f}")
+                f"Testing. Loss: {test_loss / (idx + 1) : .4f} {metric_string}")
 
     test_loss /= len(test_loader.dataset)
+    metric_string = " ".join(f"{i.name}: {i.value():.2f}%" for i in metric_stats)
 
-    loguru.logger.info('Test set: Average loss: {:.4f}, Length of Test Set: {} (Accuracy {:.6f}%)'.format(
-        test_loss, len(test_loader.dataset),
-        100. * correct / total))
+    loguru.logger.info(
+        f'Test set: Average loss: {test_loss:.4f}, Length of Test Set: {len(test_loader.dataset)} {metric_string}')
+    loguru.logger.info(
+        f'Metric used for model saving: {metric_stats.stats[metric_watcher_index].name} {metric_stats.stats[metric_watcher_index].value():.2f}%')
 
-    return 100. * correct / total, test_loss.data.cpu().numpy()
+    return metric_stats.stats[metric_watcher_index].value(), test_loss.data.cpu().numpy()
 
 
 class NetworkBase:
@@ -215,10 +231,8 @@ class NetworkTrainer(object):
         device = self.device
 
         model.train()
-        total_train = 0
-        correct_train = 0
-        train_accuracy = 0
         progress_bar = tqdm(enumerate(train_loader), desc="Training", total=len(train_loader))
+        metric_stats = EpochStats([MetricStats(name=i.name) for i in self.train_settings.metrics])
 
         acc_loss = 0
         for batch_idx, (data, target, id) in progress_bar:
@@ -235,15 +249,20 @@ class NetworkTrainer(object):
 
             output = unpad(output, shape)
             loss = self.criterion(output, target)
+
             loss = loss / self.train_settings.batch_accumulation
             acc_loss += float(loss)
             loss.backward()
-
-            # _, predicted = torch.max(output.data, 1)
             predicted = torch.argmax(output.data, 1)
-            total_train += target.nelement()
-            correct_train += predicted.eq(target.data).sum().item()
-            train_accuracy = 100 * correct_train / total_train
+
+            tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
+                                                   num_classes=self.train_settings.classes,
+                                                   mode='multiclass', threshold=None)
+
+            for metric, stats in zip(self.train_settings.metrics, metric_stats):
+                acc = metric.getMetric()(tp, fp, fn, tn, class_weights=self.train_settings.class_weights,
+                                         reduction=self.train_settings.metric_reduction.value)
+                stats.values.append(acc * 100)
 
             if (batch_idx + 1) % self.train_settings.batch_accumulation == 0:  # Wait for several backward steps
                 if isinstance(self.optimizer, Iterable):  # Now we can do an optimizer step
@@ -254,15 +273,18 @@ class NetworkTrainer(object):
                 model.zero_grad()  # Reset gradients tensors
 
             for cb in self.callbacks:
-                cb.on_batch_end(batch_idx, loss=loss.item(), acc=train_accuracy)
-
+                cb.on_batch_end(batch_idx, loss=loss.item(),
+                                acc=metric_stats.stats[self.train_settings.watcher_metric_index].value())
+            metric_string = " ".join(f"{i.name}: {i.value():.2f}%" for i in metric_stats)
             progress_bar.set_description(
-                desc=f"Train E {current_epoch} Loss: {acc_loss / (batch_idx + 1):.4f} Accuracy: {train_accuracy:.2f}%",
+                desc=f"Train E {current_epoch} Loss: {acc_loss / (batch_idx + 1):.4f} {metric_string}",
                 refresh=False)
             gc.collect()
 
         for cb in self.callbacks:
-            cb.on_train_epoch_end(current_epoch, acc=train_accuracy, loss=acc_loss / len(train_loader))
+            cb.on_train_epoch_end(current_epoch,
+                                  acc=metric_stats.stats[self.train_settings.watcher_metric_index].value(),
+                                  loss=acc_loss / len(train_loader))
 
     def train_epochs(self, train_loader: data.DataLoader, val_loader: data.DataLoader, n_epoch: int, lr_schedule=None):
         criterion = nn.CrossEntropyLoss()
@@ -272,7 +294,11 @@ class NetworkTrainer(object):
             self.train_epoch(train_loader, epoch)
             accuracy, loss = test(self.network.model, self.device, val_loader, criterion=criterion,
                                   padding_value=self.network.proc_settings.input_padding_value,
-                                  debug_color_map=self.debug_color_map)
+                                  metrics=self.train_settings.metrics,
+                                  metric_watcher_index=self.train_settings.watcher_metric_index,
+                                  classes=self.train_settings.classes, class_weights=self.train_settings.class_weights,
+                                  metric_reduction=self.train_settings.metric_reduction)
+            # debug_color_map=self.debug_color_map)
 
             for cb in self.callbacks:
                 cb.on_val_epoch_end(epoch=epoch, acc=accuracy, loss=loss)
@@ -400,5 +426,3 @@ class NewImageReconstructor:
         for cls in color_map:
             nr.label(cls.label, cls.color)
         return nr.get_image()
-
-
