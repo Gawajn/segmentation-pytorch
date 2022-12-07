@@ -173,6 +173,11 @@ class TrainCallback(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def on_train_epoch_start(self):
+        # if -1 returned than epoch is skipped
+        return 0
+
+    @abc.abstractmethod
     def on_train_epoch_end(self, epoch, acc, loss):
         pass
 
@@ -291,17 +296,24 @@ class NetworkTrainer(object):
         self.network.model.float()
         loguru.logger.info('Training started ...')
         for epoch in tqdm(range(0, n_epoch)):
-            self.train_epoch(train_loader, epoch)
-            accuracy, loss = test(self.network.model, self.device, val_loader, criterion=criterion,
-                                  padding_value=self.network.proc_settings.input_padding_value,
-                                  metrics=self.train_settings.metrics,
-                                  metric_watcher_index=self.train_settings.watcher_metric_index,
-                                  classes=self.train_settings.classes, class_weights=self.train_settings.class_weights,
-                                  metric_reduction=self.train_settings.metric_reduction)
-            # debug_color_map=self.debug_color_map)
-
+            train_epoch = True
             for cb in self.callbacks:
-                cb.on_val_epoch_end(epoch=epoch, acc=accuracy, loss=loss)
+                cb_val = cb.on_train_epoch_start()
+                if cb_val == -1:
+                    train_epoch = False
+
+            if train_epoch:
+                self.train_epoch(train_loader, epoch)
+                accuracy, loss = test(self.network.model, self.device, val_loader, criterion=criterion,
+                                      padding_value=self.network.proc_settings.input_padding_value,
+                                      metrics=self.train_settings.metrics,
+                                      metric_watcher_index=self.train_settings.watcher_metric_index,
+                                      classes=self.train_settings.classes, class_weights=self.train_settings.class_weights,
+                                      metric_reduction=self.train_settings.metric_reduction)
+                # debug_color_map=self.debug_color_map)
+
+                for cb in self.callbacks:
+                    cb.on_val_epoch_end(epoch=epoch, acc=accuracy, loss=loss)
 
 
 @dataclass

@@ -26,3 +26,6 @@ class EpochStats:
 
     def to_dict(self ) -> dict:
         return {i.name: i.value() for i in self.stats}
+
+    def __getitem__(self, item):
+        return self.stats[item]

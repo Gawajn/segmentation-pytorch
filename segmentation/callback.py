@@ -17,7 +17,6 @@ class ModelWriterCallback(TrainCallback):
         assert not save_all, "Not implemented"
         self.stats: EpochStats = None
         self.metric_watcher_index = metric_watcher_index
-        self.highest_accuracy = -1
         self.best_loss = -1
         self.network = network
         self.save_path = save_path
@@ -42,7 +41,8 @@ class ModelWriterCallback(TrainCallback):
         if self.save_all:
             self.save(self.get_epoch_path(epoch))
         acc: EpochStats = acc
-        if self.stats is None or acc.stats[self.metric_watcher_index].value() > self.stats.stats[self.metric_watcher_index].value():
+        if self.stats is None or acc.stats[self.metric_watcher_index].value() > self.stats.stats[
+            self.metric_watcher_index].value():
             accuracy_before = 0 if self.stats is None else self.stats.stats[self.metric_watcher_index].value()
             self.stats = acc
             self.best_loss = loss
@@ -66,3 +66,36 @@ class ModelWriterCallback(TrainCallback):
     def get_epoch_json_path(self, e: int):
         return self.get_epoch_path(e).with_suffix(".json")
 
+
+class EarlyStoppingCallback(TrainCallback):
+    def __init__(self, patience: int = 5, metric_watcher_index=0):
+        self.current_patience = 0
+        self.patience: int = patience
+        self.stats: EpochStats = None
+        self.metric_watcher_index = metric_watcher_index
+        self.best_loss = -1
+
+        pass
+
+    def on_train_epoch_start(self):
+        if self.current_patience >= self.patience:
+            return -1
+        else:
+            return 0
+
+    def on_val_epoch_end(self, epoch, acc, loss):
+        acc: EpochStats = acc
+        if self.metric_watcher_index > 0:
+            if self.stats is None or acc.stats[self.metric_watcher_index].value() > self.stats.stats[
+                    self.metric_watcher_index].value():
+                self.stats = acc
+                self.best_loss = loss
+                self.current_patience = 0
+            else:
+                self.current_patience += 1
+        else:
+            if self.best_loss > loss:
+                self.best_loss = loss
+                self.current_patience = 0
+            else:
+                self.current_patience += 1

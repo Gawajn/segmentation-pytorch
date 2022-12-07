@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import torch.cuda
 
-from segmentation.callback import ModelWriterCallback
+from segmentation.callback import ModelWriterCallback, EarlyStoppingCallback
 from segmentation.losses import Losses
 from segmentation.metrics import Metrics, MetricReduction
 from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad
@@ -108,6 +108,7 @@ def parse_arguments():
 
     parser.add_argument('--loss', default=NetworkTrainSettings.loss.value, type=str,
                         choices=[x.value for x in list(Losses)])
+    parser.add_argument('--early_stopping', type=int, default=0,help="Number of epochs after which training is stopped model didn't improve")
     # Predefined
     parser.add_argument('--predefined_architecture',
                         default=get_default(PredefinedNetworkSettings, "architecture"),
@@ -258,6 +259,11 @@ def main():
 
         network = ModelBuilderMeta(config, args.device).get_model()
         mw = ModelWriterCallback(network, config, save_path=Path(args.output_path), prefix=model_prefix, metric_watcher_index=args.metrics_watcher_index)
+
+        callbacks = [mw]
+        if args.early_stopping > 0:
+            me = EarlyStoppingCallback(patience=args.early_stopping, metric_watcher_index=args.metrics_watcher_index)
+            callbacks.append(me)
         trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(color_map),
                                                                optimizer=Optimizers(args.optimizer),
                                                                learningrate_seghead=args.learning_rate,
@@ -269,7 +275,7 @@ def main():
                                                                class_weights=args.metrics_weights,
                                                                loss=Losses(args.loss),
                                                                ), args.device,
-                                 callbacks=[mw], debug_color_map=config.color_map)
+                                 callbacks=callbacks, debug_color_map=config.color_map)
 
         trainer.train_epochs(train_loader=train_loader, val_loader=val_loader, n_epoch=args.n_epoch, lr_schedule=None)
         return mw
@@ -289,7 +295,7 @@ def main():
         total_accuracy = 0
         total_loss = 0
         if not args.eval_images:
-            total_accuracy = float(np.mean([mw.highest_accuracy for mw in model_writers]))
+            total_accuracy = float(np.mean([mw.stats[mw.metric_watcher_index].value() for mw in model_writers]))
             total_loss = float(np.mean([mw.best_loss for mw in model_writers]))
 
         elif args.eval_images:
@@ -311,7 +317,7 @@ def main():
                 accuracy, loss = test_network(ml.model, device, eval_loader, Losses(args.loss).get_loss()() if Losses(args.loss) == Losses.cross_entropy_loss else Losses(args.loss).get_loss()(mode="multiclass"), classes=len(color_map),
                                               metrics=[Metrics(x) for x in args.metrics], metric_reduction=MetricReduction(args.metrics_reduction),  metric_watcher_index=args.metrics_watcher_index, class_weights=args.metrics_weights,
                                               padding_value=args.padding_value)
-                total_accuracy += accuracy
+                total_accuracy += accuracy.stats[args.metrics_watcher_index].value()
                 total_loss += loss
         print("EXPERIMENT_OUT=" + str(total_accuracy / len(model_writers)) + "," + str(total_loss / len(model_writers)))
 
