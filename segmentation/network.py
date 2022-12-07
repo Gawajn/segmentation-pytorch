@@ -223,7 +223,7 @@ class NetworkTrainer(object):
             optimizer = opt(self.network.model.parameters(), lr=self.train_settings.learningrate_seghead)
         self.optimizer = optimizer
 
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = settings.loss.get_loss()() if settings.loss == settings.loss.cross_entropy_loss else settings.loss.get_loss()(mode='multiclass')
         self.callbacks: List[TrainCallback] = callbacks if callbacks is not None else []
 
     def train_epoch(self, train_loader: data.DataLoader, current_epoch: int = None):

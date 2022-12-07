@@ -5,6 +5,7 @@ import numpy as np
 import torch.cuda
 
 from segmentation.callback import ModelWriterCallback
+from segmentation.losses import Losses
 from segmentation.metrics import Metrics, MetricReduction
 from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad
 from segmentation.network import NetworkTrainer
@@ -102,9 +103,11 @@ def parse_arguments():
     parser.add_argument('--metrics_reduction', default=NetworkTrainSettings.metric_reduction.value, type=str,
                         choices=[x.value for x in list(MetricReduction)],
                         help="Metric reduction")
-    parser.add_argument('--metrics_weights', default=None, type=float, nargs="+",
+    parser.add_argument('--metrics_weights', default=NetworkTrainSettings.class_weights, type=float, nargs="+",
                         help="Metric class weight, default=None (Only used when using weighted reduction")
 
+    parser.add_argument('--loss', default=NetworkTrainSettings.loss.value, type=str,
+                        choices=[x.value for x in list(Losses)])
     # Predefined
     parser.add_argument('--predefined_architecture',
                         default=get_default(PredefinedNetworkSettings, "architecture"),
@@ -254,15 +257,17 @@ def main():
                                     color_map=color_map)
 
         network = ModelBuilderMeta(config, args.device).get_model()
-
         mw = ModelWriterCallback(network, config, save_path=Path(args.output_path), prefix=model_prefix)
         trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(color_map),
                                                                optimizer=Optimizers(args.optimizer),
                                                                learningrate_seghead=args.learning_rate,
                                                                batch_accumulation=args.batch_accumulation,
                                                                processes=args.processes,
-                                                               metrics=[Metrics(x) for x in args.metrics]
-
+                                                               metrics=[Metrics(x) for x in args.metrics],
+                                                               metric_reduction=MetricReduction(args.metrics_reduction),
+                                                               watcher_metric_index=args.metrics_watcher_index,
+                                                               class_weights=args.metrics_weights,
+                                                               loss=Losses(args.loss),
                                                                ), args.device,
                                  callbacks=[mw], debug_color_map=config.color_map)
 

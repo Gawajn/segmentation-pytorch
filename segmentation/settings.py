@@ -5,6 +5,7 @@ from typing import Optional, List, Union, Tuple, Dict
 import loguru
 from dataclasses_json import dataclass_json
 
+from segmentation.losses import Losses
 from segmentation.metrics import MetricReduction, Metrics
 from segmentation.modules import Architecture
 import segmentation_models_pytorch as sm
@@ -62,6 +63,7 @@ class NetworkTrainSettings:
     learningrate_decoder: float = 1.e-4
     learningrate_seghead: float = 1.e-4
     batch_accumulation: int = 1
+    loss: Losses = Losses.cross_entropy_loss
     metric_reduction: MetricReduction = MetricReduction.micro
     metrics: List[Metrics] = field(default_factory=lambda: [NetworkTrainSettings.default_metric()])
     watcher_metric_index: int = 0
