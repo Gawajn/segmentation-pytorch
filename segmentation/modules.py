@@ -4,18 +4,29 @@ from enum import Enum
 
 ENCODERS = smp.encoders.get_encoder_names()
 
-
 class Architecture(Enum):
     FPN = 'fpn'
     UNET = 'unet'
     PSPNET = 'pspnet'
     LINKNET = 'linknet'
+    DeepLabV3 = 'deeplabV3'
+    DeepLabV3Plus = 'deeplabV3plus'
+    PAN = 'pan'
+    UnetPlusPlus = 'UnetPlusPlus'
+    MAnet = 'MAnet'
 
     def get_architecture(self):
         return {'fpn': smp.FPN,
                 'unet': smp.Unet,
                 'pspnet': smp.PSPNet,
-                'linknet': smp.Linknet}[self.value]
+                'linknet': smp.Linknet,
+                'MAnet': smp.MAnet,
+                'UnetPlusPlus': smp.UnetPlusPlus,
+                'pan': smp.PAN,
+                'deeplabV3': smp.DeepLabV3,
+                'DeepLabV3Plus': smp.DeepLabV3Plus,
+
+                }[self.value]
 
     @staticmethod
     def get_all_architectures():
