@@ -308,7 +308,9 @@ def main():
                 eval_loader = DataLoader(dataset=d_eval, batch_size=1)
 
                 from segmentation.network import test as test_network
-                accuracy, loss = test_network(ml.model, eval_loader, torch.nn.CrossEntropyLoss(), args.padding_value)
+                accuracy, loss = test_network(ml.model, device, eval_loader, Losses(args.loss).get_loss()() if Losses(args.loss) == Losses.cross_entropy_loss else Losses(args.loss).get_loss()(mode="multiclass"), classes=len(color_map),
+                                              metrics=[Metrics(x) for x in args.metrics], metric_reduction=MetricReduction(args.metrics_reduction),  metric_watcher_index=args.metrics_watcher_index, class_weights=args.metrics_weights,
+                                              padding_value=args.padding_value)
                 total_accuracy += accuracy
                 total_loss += loss
         print("EXPERIMENT_OUT=" + str(total_accuracy / len(model_writers)) + "," + str(total_loss / len(model_writers)))
