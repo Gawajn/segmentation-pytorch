@@ -11,6 +11,7 @@ from segmentation.model_builder import ModelBuilderLoad
 from segmentation.network import EnsemblePredictor
 from segmentation.network_postprocessor import NetworkMaskPostProcessor, NetworkBaselinePostProcessor
 from segmentation.preprocessing.source_image import SourceImage
+from segmentation.scripts.train import get_default_device
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import itertools
@@ -75,7 +76,7 @@ def main():
     parser.add_argument("--min_line_height", type=int, default=None,
                         help="If the average line_height of an document is smaller then the specified value, "
                              "the document is scaled up an processed again on the new resolution")
-    parser.add_argument("--cpu", action="store_true", help="Use cpu")
+    parser.add_argument("-d", "--device", type=str, default=get_default_device())
     parser.add_argument("--tta", action="store_true", help="Use predefined Tta-pipeline")
     parser.add_argument("--dewarp", action="store_true", help="Dewarp image using the detected baselines")
     parser.add_argument("--show_result", action="store_true")
@@ -85,7 +86,7 @@ def main():
 
     args = parser.parse_args()
     image_list = list(itertools.chain.from_iterable([glob.glob(x) for x in args.image_path]))
-    base_model_files = [ModelBuilderLoad.from_disk(model_weights=i, device="cuda") for i in args.load]
+    base_model_files = [ModelBuilderLoad.from_disk(model_weights=i, device=args.device) for i in args.load]
     base_models = [i.get_model() for i in base_model_files]
     base_configs = [i.get_model_configuration() for i in base_model_files]
     preprocessing_settings = [i.get_model_configuration().preprocessing_settings for i in base_model_files]
