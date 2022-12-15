@@ -45,7 +45,7 @@ def get_default(cls, field_name: str):
 
 def get_default_device():
     if torch.cuda.is_available():
-        return torch.cuda.current_device()
+        return "cuda"
     else:
         return "cpu"
 
