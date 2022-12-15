@@ -62,7 +62,7 @@ def main():
     parser.add_argument("--load", type=str, nargs="*", default=[],
                         help="load models and use it for inference (specify .torch file)")
     parser.add_argument("--image_path", type=str, nargs="*", default=[], help="load models and use it for inference")
-    parser.add_argument("--scale_area", type=bool, action="store_true", help="Enable image scaling")
+    parser.add_argument("--scale_area", action="store_true", help="Enable image scaling")
     parser.add_argument("--scale_area_size", type=int, help="max pixel amount of an image")
 
     parser.add_argument("--output_xml", action="store_true", help="Outputs Xml Files")
@@ -108,7 +108,7 @@ def main():
             if args.output_path_debug_images:
                 basename = "debug_" + os.path.basename(img_path)
                 file_path = os.path.join(args.output_path_debug_images, basename)
-                mask.save(file_path)
+                mask.generated_mask.save(file_path)
 
     if args.mode == "xml_baseline":
         nbaselinepred = NetworkBaselinePostProcessor(predictor, config.color_map)
