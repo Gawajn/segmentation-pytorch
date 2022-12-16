@@ -70,8 +70,8 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
                                                    mode='multiclass', threshold=None)
 
             for metric, stats in zip(metrics, metric_stats):
-                acc = metric.getMetric()(tp, fp, fn, tn, class_weights=class_weights,
-                                         reduction=metric_reduction.value)
+                acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
+                                          reduction=metric_reduction.value)
                 stats.values.append(acc * 100)
 
             metric_string = " ".join(f"{i.name}: {i.value():.2f}%" for i in metric_stats)
@@ -265,8 +265,8 @@ class NetworkTrainer(object):
                                                    mode='multiclass', threshold=None)
 
             for metric, stats in zip(self.train_settings.metrics, metric_stats):
-                acc = metric.getMetric()(tp, fp, fn, tn, class_weights=self.train_settings.class_weights,
-                                         reduction=self.train_settings.metric_reduction.value)
+                acc = metric.get_metric()(tp, fp, fn, tn, class_weights=self.train_settings.class_weights,
+                                          reduction=self.train_settings.metric_reduction.value)
                 stats.values.append(acc * 100)
 
             if (batch_idx + 1) % self.train_settings.batch_accumulation == 0:  # Wait for several backward steps
