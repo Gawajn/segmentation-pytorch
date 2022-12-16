@@ -4,7 +4,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from segmentation.model_builder import ModelBuilderLoad
-from segmentation.network import NetworkMaskPostProcessor
+from segmentation.network_postprocessor import NetworkMaskPostProcessor
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.settings import ColorMap, ClassSpec
 

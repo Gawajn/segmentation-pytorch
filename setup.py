@@ -14,7 +14,10 @@ setup(
     author="Alexander Hartelt",
     author_email="alexander.hartelt@informatik.uni-wuerzburg.de",
     url="https://github.com/Gawajn/segmentation-pytorch",
-    install_requires=open("requirements.txt").read().split(),
+    install_requires=[x for x in open("requirements.txt").read().split() if not x.startswith("git+")] + [
+        "doxapy @ git+https://gitlab2.informatik.uni-wuerzburg.de/nof36hn/binarizer-doxa.git"
+    ],
+
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",

@@ -36,7 +36,7 @@ class Metrics(Enum):
     positive_likelihood_ratio = 'positive_likelihood_ratio'
     negative_likelihood_ratio = 'negative_likelihood_ratio'
 
-    def getMetric(self):
+    def get_metric(self):
         return {
             'fbeta_score': fbeta_score,
             'f1_score': f1_score,

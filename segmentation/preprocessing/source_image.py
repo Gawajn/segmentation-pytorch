@@ -4,10 +4,11 @@ from typing import Union
 import PIL
 from PIL import Image
 
+from segmentation.binarization.doxapy_bin import BinarizationAlgorithm, BinarizationParams, _needs_binarization, \
+    binarize
 from segmentation.dataset import get_rescale_factor
 
 import numpy as np
-from doxapy.binarization import BinarizationAlgorithm, binarize, _needs_binarization, BinarizationParams
 
 
 class RescaleMethod(enum.Enum):
