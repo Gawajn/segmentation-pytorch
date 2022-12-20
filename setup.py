@@ -15,7 +15,7 @@ setup(
     author_email="alexander.hartelt@informatik.uni-wuerzburg.de",
     url="https://github.com/Gawajn/segmentation-pytorch",
     install_requires=[x for x in open("requirements.txt").read().split() if not x.startswith("git+")] + [
-        "doxapy @ git+https://gitlab2.informatik.uni-wuerzburg.de/nof36hn/binarizer-doxa.git"
+        #"doxapy @ git+https://gitlab2.informatik.uni-wuerzburg.de/nof36hn/binarizer-doxa.git"
     ],
 
     classifiers=[
