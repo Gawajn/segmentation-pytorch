@@ -11,6 +11,10 @@ from segmentation.stats import EpochStats
 
 
 class ModelWriterCallback(TrainCallback):
+    def on_train_epoch_start(self):
+        # if -1 returned than epoch is skipped
+        return 0
+
     def __init__(self, network: Network, model_configuration: ModelConfiguration, save_path: Path, prefix: str = "",
                  metric_watcher_index=0,
                  save_all: bool = False):

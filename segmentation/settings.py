@@ -12,7 +12,7 @@ import segmentation_models_pytorch as sm
 
 from segmentation.optimizer import Optimizers
 from mashumaro.mixins.json import DataClassJSONMixin
-from serde import serde
+#from serde import serde
 
 
 @dataclass

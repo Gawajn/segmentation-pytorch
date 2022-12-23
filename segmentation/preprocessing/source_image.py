@@ -44,7 +44,7 @@ class SourceImage:
     def from_numpy(arr):
         return SourceImage(Image.fromarray(arr))
 
-    def __init__(self, img: Image, scale_factor: Union[int,float] = 1):
+    def __init__(self, img: Image, scale_factor: Union[int, float] = 1):
         self.pil_image = img
         self.binarized_cache = None
         self.array_cache = None
