@@ -11,9 +11,7 @@ from segmentation.stats import EpochStats
 
 
 class ModelWriterCallback(TrainCallback):
-    def on_train_epoch_start(self):
-        # if -1 returned than epoch is skipped
-        return 0
+
 
     def __init__(self, network: Network, model_configuration: ModelConfiguration, save_path: Path, prefix: str = "",
                  metric_watcher_index=0,
@@ -32,7 +30,9 @@ class ModelWriterCallback(TrainCallback):
 
     def on_train_epoch_end(self, epoch, acc, loss):
         pass
-
+    def on_train_epoch_start(self):
+        # if -1 returned than epoch is skipped
+        return 0
     def save(self, path: Path):
         torch.save(self.network.model.state_dict(), path.with_suffix(".torch"))
         loguru.logger.info(f'Saving model to {path.with_suffix(".torch")}')
