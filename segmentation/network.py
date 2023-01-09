@@ -200,7 +200,7 @@ def debug_img(mask, target, original, color_map: ColorMap):
         # original = original + mean
         original = original * 255
         original = original.astype(int)
-        f, ax = plt.subplots(1, 3, True, True)
+        f, ax = plt.subplots(nrows=1, ncols=3, sharex=True, sharey=True)
         target = torch.squeeze(target).cpu()
         ax[0].imshow(NewImageReconstructor.label_to_colors(target, color_map))
         ax[1].imshow(NewImageReconstructor.label_to_colors(mask, color_map))
@@ -249,8 +249,8 @@ class NetworkTrainer(object):
             input = padded.float()
 
             output = model(input)
-            # if batch_idx % 250 == 0:
-            #    debug_img(output, target, data, self.debug_color_map)
+            if batch_idx % 50 == 0:
+                debug_img(output, target, data, self.debug_color_map)
 
             output = unpad(output, shape)
             loss = self.criterion(output, target)

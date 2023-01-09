@@ -20,8 +20,8 @@ if __name__ == '__main__':
         ['/home/alexanderh/Documents/datasets/baselines/test/page/'])
 
     cmap = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
-                     ClassSpec(label=1, name="Baseline", color=[255, 0, 255]),
-                     ClassSpec(label=2, name="BaselineBorder", color=[255, 255, 0])])
+                          ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
+                          ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
 
     from segmentation.dataset import default_transform, dirs_to_pandaframe, load_image_map_from_file, XMLDataset
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     network = ModelBuilderMeta(config, "cuda").get_model()
 
     mw = ModelWriterCallback(network, config, save_path=Path("/tmp"))
-    trainer = NetworkTrainer(network, NetworkTrainSettings(), "cuda",
+    trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(cmap)), "cuda",
                              callbacks=[mw], debug_color_map=config.color_map)
 
     trainer.train_epochs(train_loader=train_loader, val_loader=val_loader, n_epoch=2, lr_schedule=None)

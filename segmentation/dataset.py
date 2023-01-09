@@ -50,7 +50,7 @@ def color_to_label(mask, colormap: ColorMap):
     for cspec in colormap:
         color, label = cspec.color, cspec.label
         color_1d = 256 * 256 * color[0] + 256 * color[1] + color[2]
-        out += (mask == color_1d) * label
+        out += np.int32((mask == color_1d) * label)
     return out
 
 
@@ -162,6 +162,7 @@ class MemoryDataset(Dataset):
 
         image = image_id
         mask = mask_id
+
         pil_image = Image.fromarray(image)
         rescale_factor = get_rescale_factor(pil_image, scale_area=self.scale_area)
         image = np.array(rescale_pil(pil_image, rescale_factor, 1))

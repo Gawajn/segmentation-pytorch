@@ -93,7 +93,7 @@ def binarize(image):
         else:
             # convert the image to greyscale
             # important to use this color space!!!!
-            image = skimage.color.rgb2grey(image)
+            image = skimage.color.rgb2gray(image)
     image = normalize_raw_image(image)
     extreme = (
             (np.sum(image < 0.05) + np.sum(image > 0.95)) * 1.0 / np.prod(image.shape)
