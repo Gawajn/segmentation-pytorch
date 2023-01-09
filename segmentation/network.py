@@ -292,7 +292,7 @@ class NetworkTrainer(object):
                                   loss=acc_loss / len(train_loader))
 
     def train_epochs(self, train_loader: data.DataLoader, val_loader: data.DataLoader, n_epoch: int, lr_schedule=None):
-        criterion = nn.CrossEntropyLoss()
+        #criterion = nn.CrossEntropyLoss()
         self.network.model.float()
         loguru.logger.info('Training started ...')
         for epoch in tqdm(range(0, n_epoch)):
@@ -304,7 +304,7 @@ class NetworkTrainer(object):
 
             if train_epoch:
                 self.train_epoch(train_loader, epoch)
-                accuracy, loss = test(self.network.model, self.device, val_loader, criterion=criterion,
+                accuracy, loss = test(self.network.model, self.device, val_loader, criterion=self.criterion,
                                       padding_value=self.network.proc_settings.input_padding_value,
                                       metrics=self.train_settings.metrics,
                                       metric_watcher_index=self.train_settings.watcher_metric_index,
