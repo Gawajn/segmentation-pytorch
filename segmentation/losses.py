@@ -55,5 +55,5 @@ class Losses(Enum):
             'soft_bce_with_logits_loss': SoftBCEWithLogitsLoss,
             'soft_cross_entropy_loss': SoftCrossEntropyLoss,
             'mcc_loss': MCCLoss,
-            'cross_entropy_loss': CrossEntropyLoss,
+            'cross_entropy_loss': nn.CrossEntropyLoss,
         }[self.value]

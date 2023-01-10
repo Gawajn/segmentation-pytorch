@@ -12,7 +12,9 @@ import segmentation_models_pytorch as sm
 
 from segmentation.optimizer import Optimizers
 from mashumaro.mixins.json import DataClassJSONMixin
-#from serde import serde
+
+
+# from serde import serde
 
 
 @dataclass
@@ -28,10 +30,10 @@ class CustomModelSettings(DataClassJSONMixin):
     encoder_depth: int = 3
     attention_depth: int = 3
     attention_encoder_depth: int = 3
-    activation: bool = False
+    activation: bool = True
     channels_in: int = 3
     channels_out: int = 16
-    attention: bool = True
+    attention: bool = False
     weight_sharing: bool = True
     scaled_image_input: bool = False
 
@@ -107,6 +109,9 @@ class ColorMap(DataClassJSONMixin):
         with open(path) as f:
             return cls.from_json(f.read())
 
+    def to_albumentation_color_map(self) -> Dict[int,Tuple[int]]:
+        return {x.label: x.color for x in self.class_spec}
+
 
 @dataclass
 class Preprocessingfunction(DataClassJSONMixin):
@@ -127,6 +132,7 @@ class Preprocessingfunction(DataClassJSONMixin):
 
 @dataclass
 class ProcessingSettings(DataClassJSONMixin):
+    transforms: Dict
     input_padding_value: int = 32
     rgb: bool = True
     preprocessing: Preprocessingfunction = field(
@@ -134,6 +140,7 @@ class ProcessingSettings(DataClassJSONMixin):
     scale_train: bool = True
     scale_predict: bool = True
     scale_max_area: Optional[int] = 1_000_000  # TODO implement
+
 
 
 @dataclass

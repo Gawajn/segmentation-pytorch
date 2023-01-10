@@ -1,14 +1,19 @@
 import os
 from pathlib import Path
 
+import albumentations
 import numpy as np
 import torch.cuda
+from albumentations.pytorch import ToTensorV2
+import albumentations as albu
 
 from segmentation.callback import ModelWriterCallback, EarlyStoppingCallback
 from segmentation.losses import Losses
 from segmentation.metrics import Metrics, MetricReduction
 from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad
 from segmentation.network import NetworkTrainer
+from segmentation.preprocessing.workflow import PreprocessingTransforms, GrayToRGBTransform, ColorMapTransform, \
+    NetworkEncoderTransform
 from segmentation.settings import Architecture, NetworkTrainSettings, Preprocessingfunction, ColorMap, ClassSpec
 from segmentation.modules import ENCODERS
 import argparse
@@ -228,19 +233,92 @@ def main():
         )
 
     def train_arg(train, test, args, model_prefix="") -> ModelWriterCallback:
+        """
+        def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, color_map=None,
+            binary_augmentation=True, ocropy=True, crop=False, crop_x=512, crop_y=512):
+    if rgb:
+        image = gray_to_rgb(image)
+    result = {"image": image}
+    if color_map:
+        if mask.ndim == 3:
+            result["mask"] = color_to_label(mask, color_map)
+        elif mask.ndim == 2:
+            u_values = np.unique(mask)
+            mask = result["mask"]
+            for ind, x in enumerate(u_values):
+                mask[mask == x] = ind
+            result["mask"] = mask
+    else:
+        result["mask"] = mask if mask is not None else image
+
+    if augmentation is not None:
+        result = augmentation(**result)
+
+    if augmentation is not None and binary_augmentation:
+        from segmentation.preprocessing.basic_binarizer import gauss_threshold
+        from segmentation.preprocessing.ocrupus import binarize
+        ran = np.random.randint(1, 5)
+        if ran == 1:
+            if ocropy:
+                binary = binarize(result["image"].astype("float64")).astype("uint8") * 255
+                gray = gray_to_rgb(binary)
+                result["image"] = gray_to_rgb(gray)
+        if ran == 2:
+            image = rgb2gray(result["image"]).astype(np.uint8)
+            result["image"] = gray_to_rgb(gauss_threshold(image))
+    if crop:
+        result = compose([[albu.RandomCrop(
+            crop_y, crop_x, p=1
+        )]])(**result)
+        ## albumentations.augmentations.crops.transforms.RandomResizedCrop
+    if apply_preprocessing is not None and apply_preprocessing:
+        result["image"] = preprocessing(result["image"])
+    result = compose([post_transforms()])(**result)
+    return result["image"], result["mask"]
+
+        """
+        def remove_nones(x):
+            return [y for y in x if y is not None]
+
+        def default_transform():
+            result = albumentations.Compose([
+                albu.HorizontalFlip(),
+                albu.RandomGamma(),
+                albu.RandomBrightnessContrast(),
+                albu.OneOf([
+                    albu.ToGray(),
+                    albu.CLAHE()]),
+                albu.RandomScale(),
+
+            ])
+            return result
+        input_transforms = albumentations.Compose(remove_nones([
+            GrayToRGBTransform() if True else None,
+            ColorMapTransform(color_map=color_map.to_albumentation_color_map())
+
+        ]))
+        aug_transforms = default_transform()
+        tta_transforms = None
+        post_transforms = albumentations.Compose(remove_nones([
+            NetworkEncoderTransform(args.predefined_encoder if not args.custom_model else Preprocessingfunction.name),
+            ToTensorV2()
+        ]))
+        transforms = PreprocessingTransforms(
+            input_transform=input_transforms,
+            aug_transform=aug_transforms,
+            #tta_transforms=tta_transforms,
+            post_transforms=post_transforms,
+        )
+
         if args.mode == "xml_region" or args.mode == "xml_baseline":
-            dt = XMLDataset(train, color_map, transform=compose([default_transform()]),
+            dt = XMLDataset(train, transform=transforms,
                             mask_generator=MaskGenerator(settings=mask_settings))
-            d_test = XMLDataset(test, color_map, transform=compose([default_transform()]),
+            d_test = XMLDataset(test, transform=transforms,
                                 mask_generator=MaskGenerator(settings=mask_settings))
 
         else:
-            dt = MaskDataset(train, color_map, transform=compose([default_transform()]),
-                             scale_area=args.scale_area,
-                             crop=args.crop_train, crop_x=args.crop_x_train, crop_y=args.crop_y_train)
-            d_test = MaskDataset(test, color_map, transform=compose([default_transform()]),
-                                 scale_area=args.scale_area,
-                                 crop=args.crop_val, crop_x=args.crop_x_val, crop_y=args.crop_y_val)
+            dt = MaskDataset(train, transform=transforms, scale_area=args.scale_area)
+            d_test = MaskDataset(test, transform=transforms, scale_area=args.scale_area)
 
         train_loader = DataLoader(dataset=dt, batch_size=1)
         val_loader = DataLoader(dataset=d_test, batch_size=1)
@@ -250,7 +328,8 @@ def main():
                                         args) if not args.custom_model else None,
                                     custom_model_settings=get_custom_model_settings(
                                         args) if args.custom_model else None,
-                                    preprocessing_settings=ProcessingSettings(input_padding_value=args.padding_value,
+                                    preprocessing_settings=ProcessingSettings(transforms=transforms.to_dict(),
+                                                                              input_padding_value=args.padding_value,
                                                                               rgb=True,
                                                                               scale_max_area=args.scale_area,
                                                                               preprocessing=Preprocessingfunction(

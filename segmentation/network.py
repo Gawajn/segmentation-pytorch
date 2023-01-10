@@ -14,9 +14,11 @@ from tqdm import tqdm
 import segmentation_models_pytorch as smp
 
 from segmentation.dataset import process, get_rescale_factor, rescale_pil, label_to_colors
+from segmentation.losses import Losses
 from segmentation.metrics import Metrics
 from segmentation.preprocessing.source_image import SourceImage
-from segmentation.settings import NetworkTrainSettings, ProcessingSettings, ModelConfiguration, ClassSpec, ColorMap
+from segmentation.settings import NetworkTrainSettings, ProcessingSettings, ModelConfiguration, ClassSpec, ColorMap, \
+    Preprocessingfunction
 import numpy as np
 
 from segmentation.stats import MetricStats, EpochStats
@@ -228,10 +230,11 @@ class NetworkTrainer(object):
             optimizer = opt(self.network.model.parameters(), lr=self.train_settings.learningrate_seghead)
         self.optimizer = optimizer
 
-        self.criterion = settings.loss.get_loss()() if settings.loss == settings.loss.cross_entropy_loss else settings.loss.get_loss()(mode='multiclass')
+        self.criterion = settings.loss.get_loss()() if settings.loss == Losses.cross_entropy_loss else settings.loss.get_loss()(mode='multiclass')
         self.callbacks: List[TrainCallback] = callbacks if callbacks is not None else []
 
     def train_epoch(self, train_loader: data.DataLoader, current_epoch: int = None):
+        #print(torch.is_grad_enabled())
         model = self.network.model
         device = self.device
 
@@ -249,33 +252,34 @@ class NetworkTrainer(object):
             input = padded.float()
 
             output = model(input)
-            if batch_idx % 50 == 0:
-                debug_img(output, target, data, self.debug_color_map)
+
 
             output = unpad(output, shape)
             loss = self.criterion(output, target)
 
             loss = loss / self.train_settings.batch_accumulation
             acc_loss += float(loss)
+            model.zero_grad()  # Reset gradients tensors
+
             loss.backward()
             predicted = torch.argmax(output.data, 1)
-
+            #if batch_idx % 50 == 0:
+            #    debug_img(output, target, data, self.debug_color_map)
             tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
                                                    num_classes=self.train_settings.classes,
                                                    mode='multiclass', threshold=None)
-
             for metric, stats in zip(self.train_settings.metrics, metric_stats):
                 acc = metric.get_metric()(tp, fp, fn, tn, class_weights=self.train_settings.class_weights,
                                           reduction=self.train_settings.metric_reduction.value)
                 stats.values.append(acc * 100)
 
             if (batch_idx + 1) % self.train_settings.batch_accumulation == 0:  # Wait for several backward steps
+
                 if isinstance(self.optimizer, Iterable):  # Now we can do an optimizer step
                     for opt in self.optimizer:
                         opt.step()
                 else:
                     self.optimizer.step()
-                model.zero_grad()  # Reset gradients tensors
 
             for cb in self.callbacks:
                 cb.on_batch_end(batch_idx, loss=loss.item(),
