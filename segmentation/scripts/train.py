@@ -68,7 +68,7 @@ def parse_arguments():
                         help="load an existing model and continue training")
     parser.add_argument("--finetune",  action="store_true",
                         help="Ignore other model settings and load from saved model configuration")
-    parser.add_argument("-E", "--n_epoch", type=int, default=15,
+    parser.add_argument("-e", "--n_epoch", type=int, default=15,
                         help="number of epochs")
     parser.add_argument("--data-augmentation", action="store_true",
                         help="Enable data augmentation")
@@ -289,8 +289,8 @@ def train_arg(train, test, args, network: Network, config: ModelConfiguration, m
         dt = MaskDataset(train, transforms=transforms.get_train_transforms(), scale_area=args.scale_area)
         d_test = MaskDataset(test, transforms=transforms.get_test_transforms(), scale_area=args.scale_area)
 
-    train_loader = DataLoader(dataset=dt, batch_size=1, num_workers=args.processes)
-    val_loader = DataLoader(dataset=d_test, batch_size=1, num_workers=args.processes)
+    train_loader = DataLoader(dataset=dt, batch_size=1, num_workers=args.processes, shuffle=True)
+    val_loader = DataLoader(dataset=d_test, batch_size=1, num_workers=args.processes, shuffle=False)
 
     mw = ModelWriterCallback(network, config, save_path=Path(args.output_path), prefix=model_prefix,
                              metric_watcher_index=args.metrics_watcher_index)
