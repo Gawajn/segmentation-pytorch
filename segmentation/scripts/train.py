@@ -6,7 +6,6 @@ import albumentations
 import numpy as np
 import torch.cuda
 from albumentations.pytorch import ToTensorV2
-import albumentations as albu
 
 from segmentation.callback import ModelWriterCallback, EarlyStoppingCallback
 from segmentation.losses import Losses
@@ -221,19 +220,19 @@ def build_model_from_args(args, color_map: ColorMap) -> Tuple[Network, ModelConf
 
     def default_transform():
         result = albumentations.Compose([
-            albu.RandomScale(),
-            albu.HorizontalFlip(p=0.25),
-            albu.RandomGamma(),
-            albu.RandomBrightnessContrast(),
-            albu.OneOf([
-                albu.OneOf([
+            albumentations.RandomScale(),
+            albumentations.HorizontalFlip(p=0.25),
+            albumentations.RandomGamma(),
+            albumentations.RandomBrightnessContrast(),
+            albumentations.OneOf([
+                albumentations.OneOf([
                     BinarizeDoxapy("sauvola"),
                     BinarizeDoxapy("ocropus"),
                     BinarizeDoxapy("isauvola"),
                 ]),
-                albu.OneOf([
-                    albu.ToGray(),
-                    albu.CLAHE()
+                albumentations.OneOf([
+                    albumentations.ToGray(),
+                    albumentations.CLAHE()
                 ])
             ], p=0.3)
         ])
