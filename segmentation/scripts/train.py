@@ -66,6 +66,8 @@ def parse_arguments():
                         help="target directory for model and logs")
     parser.add_argument("--load", type=str, default=None,
                         help="load an existing model and continue training")
+    parser.add_argument("--finetune",  action="store_true",
+                        help="Ignore other model settings and load from saved model configuration")
     parser.add_argument("-E", "--n_epoch", type=int, default=15,
                         help="number of epochs")
     parser.add_argument("--data-augmentation", action="store_true",
@@ -102,7 +104,7 @@ def parse_arguments():
     parser.add_argument('--optimizer', default=NetworkTrainSettings.optimizer.value, type=str,
                         choices=[x.value for x in list(Optimizers)])
     # metric settings
-    parser.add_argument('--metrics', default=NetworkTrainSettings.default_metric(), type=str,
+    parser.add_argument('--metrics', default=[NetworkTrainSettings.default_metric()], type=str,
                         choices=[x.value for x in list(Metrics)], nargs='+')
     parser.add_argument('--metrics_watcher_index', default=0, type=int,
                         help="Index of metric used for comparing models, default=0")
