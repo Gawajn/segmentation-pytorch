@@ -4,10 +4,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Tuple, List
 
+import albumentations
+from albumentations.pytorch import ToTensorV2
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from segmentation.modules import Architecture
 from segmentation.optimizer import Optimizers
+from segmentation.preprocessing.workflow import PreprocessingTransforms, ColorMapTransform, GrayToRGBTransform, \
+    NetworkEncoderTransform
 from segmentation.settings import ModelFile, ModelConfiguration, ProcessingSettings, CustomModelSettings, \
     Preprocessingfunction, PredefinedNetworkSettings, ColorMap, ClassSpec
 
@@ -84,11 +88,44 @@ class HistoricalTrainSettings(DataClassJSONMixin):
 
     PROCESSES: int = 0
 
-    def get_processing_settings(self, rgb: bool):
+    def get_processing_settings(self, rgb: bool, color_map: ColorMap):
+        def remove_nones(x):
+            return [y for y in x if y is not None]
+
+        def default_transform():
+            result = albumentations.Compose([
+                albumentations.HorizontalFlip(),
+                albumentations.RandomGamma(),
+                albumentations.RandomBrightnessContrast(),
+                albumentations.OneOf([
+                    albumentations.ToGray(),
+                    albumentations.CLAHE()]),
+                albumentations.RandomScale(),
+
+            ])
+            return result
+
+        input_transforms = albumentations.Compose(remove_nones([
+            GrayToRGBTransform() if rgb else None,
+            ColorMapTransform(color_map=color_map.to_albumentation_color_map())
+
+        ]))
+        aug_transforms = default_transform()
+        tta_transforms = None
+        post_transforms = albumentations.Compose(remove_nones([
+            NetworkEncoderTransform(self.ENCODER if not self.CUSTOM_MODEL else Preprocessingfunction.name),
+            ToTensorV2()
+        ]))
+        transforms = PreprocessingTransforms(
+            input_transform=input_transforms,
+            aug_transform=aug_transforms,
+            # tta_transforms=tta_transforms,
+            post_transforms=post_transforms,
+        )
         return ProcessingSettings(input_padding_value=self.PADDING_VALUE, rgb=rgb,
                                   preprocessing=Preprocessingfunction(
                                       self.ENCODER if not self.CUSTOM_MODEL else "default"), scale_train=True,
-                                  scale_predict=True, scale_max_area=self.IMAGEMAX_AREA)
+                                  scale_predict=True, scale_max_area=self.IMAGEMAX_AREA, transforms=transforms.to_dict())
 
     def get_network_settings(self):
         return PredefinedNetworkSettings(self.CLASSES, self.ARCHITECTURE, self.ENCODER, self.ENCODER_DEPTH,
@@ -130,7 +167,7 @@ def main():
         custom_model_settings=settings.CUSTOM_MODEL.to_custom_model_settings(scaled_image_input=False,
                                                                              weight_sharing=False) if settings.CUSTOM_MODEL else None,
         network_settings=settings.get_network_settings(),
-        preprocessing_settings=settings.get_processing_settings(rgb=True),
+        preprocessing_settings=settings.get_processing_settings(rgb=True, color_map=color_map),
         use_custom_model=True if settings.CUSTOM_MODEL else False,
         color_map=color_map),
                    None)
