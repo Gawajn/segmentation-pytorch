@@ -14,7 +14,7 @@ from segmentation.metrics import Metrics, MetricReduction
 from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad
 from segmentation.network import NetworkTrainer, Network
 from segmentation.preprocessing.workflow import PreprocessingTransforms, GrayToRGBTransform, ColorMapTransform, \
-    NetworkEncoderTransform
+    NetworkEncoderTransform, BinarizeGauss, BinarizeDoxapy
 from segmentation.settings import Architecture, NetworkTrainSettings, Preprocessingfunction, ColorMap, ClassSpec
 from segmentation.modules import ENCODERS
 import argparse
@@ -214,20 +214,28 @@ def get_custom_model_settings(args, color_map: ColorMap) -> CustomModelSettings:
     )
 
 
+
 def build_model_from_args(args, color_map: ColorMap) -> Tuple[Network, ModelConfiguration]:
     def remove_nones(x):
         return [y for y in x if y is not None]
 
     def default_transform():
         result = albumentations.Compose([
-            albu.HorizontalFlip(),
+            albu.RandomScale(),
+            albu.HorizontalFlip(p=0.25),
             albu.RandomGamma(),
             albu.RandomBrightnessContrast(),
             albu.OneOf([
-                albu.ToGray(),
-                albu.CLAHE()]),
-            albu.RandomScale(),
-
+                albu.OneOf([
+                    BinarizeDoxapy("sauvola"),
+                    BinarizeDoxapy("ocropus"),
+                    BinarizeDoxapy("isauvola"),
+                ]),
+                albu.OneOf([
+                    albu.ToGray(),
+                    albu.CLAHE()
+                ])
+            ], p=0.3)
         ])
         return result
 

@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple, Callable
 from segmentation.settings import  Preprocessingfunction
-from segmentation.util import gray_to_rgb, rgb2gray
+from segmentation.util import rgb2gray, gray_to_rgb, show_images, gray_to_rgb_luminance
 
 import albumentations as albu
 import numpy as np
+
+from segmentation.binarization.doxapy_bin import binarize, BinarizationAlgorithm
 
 @dataclass
 class PreprocessingTransforms:
@@ -131,22 +133,15 @@ class GrayToRGBTransform(albu.core.transforms_interface.BasicTransform):
         return ()
 
 
-class BinarizeGreyScaleAugmentation(albu.core.transforms_interface.BasicTransform):
+class BinarizeGauss(albu.core.transforms_interface.BasicTransform):
     def __init__(self, **params):
         super().__init__(**params)
 
     def apply_to_image(self, image, **params):
         from segmentation.preprocessing.basic_binarizer import gauss_threshold
-        from segmentation.preprocessing.ocrupus import binarize
 
-        ran = np.random.randint(1, 5)
-        if ran == 1:
-            binary = binarize(image.astype("float64")).astype("uint8") * 255
-            gray = gray_to_rgb(binary)
-            return gray_to_rgb(gray)
-        if ran == 2:
-            image = rgb2gray(image).astype(np.uint8)
-            return gray_to_rgb(gauss_threshold(image))
+        image = rgb2gray(image).astype(np.uint8)
+        return gray_to_rgb(gauss_threshold(image))
 
     @property
     def targets(self) -> Dict[str, Callable]:
@@ -156,7 +151,25 @@ class BinarizeGreyScaleAugmentation(albu.core.transforms_interface.BasicTransfor
 
     def get_transform_init_args_names(self):
         return ()
+class BinarizeDoxapy(albu.core.transforms_interface.BasicTransform):
+    def __init__(self, algorithm=BinarizationAlgorithm.ISauvola.value, **params):
+        super().__init__(**params)
+        self.algorithm = algorithm
+    def apply_to_image(self, image, **params):
+        from segmentation.binarization.doxapy_bin import binarize, BinarizationAlgorithm
 
+        binary = binarize(image,algorithm=BinarizationAlgorithm(self.algorithm)).astype("uint8") * 255
+
+        return gray_to_rgb(binary)
+
+    @property
+    def targets(self) -> Dict[str, Callable]:
+        return {
+            "image": self.apply_to_image,
+        }
+
+    def get_transform_init_args_names(self):
+        return ["algorithm"]
 
 class NetworkEncoderTransform(albu.core.transforms_interface.BasicTransform):
     def __init__(self, preprocessing_function: str, **params):
@@ -176,20 +189,3 @@ class NetworkEncoderTransform(albu.core.transforms_interface.BasicTransform):
     def get_transform_init_args_names(self):
         return ["preprocessing_function"]
 
-
-if __name__ == "__main__":
-    gray = albu.Lambda(image=gray_to_rgb, name="gray_to_rgb")
-
-    aug = albu.Compose([
-        ColorMapTransform({0: [255, 255, 255]}, always_apply=True),
-        albu.HorizontalFlip(),
-        albu.RandomGamma(),
-        albu.RandomBrightnessContrast(),
-        albu.OneOf([
-            albu.ToGray(),
-            albu.CLAHE()]),
-        albu.RandomScale(),
-    ])
-    albu_dict = albu.to_dict(aug)
-    compose = albu.from_dict(albu_dict)
-    # compose()

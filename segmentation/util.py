@@ -69,12 +69,19 @@ def grouper(iterable, n, fillvalue=None):
 
 
 def gray_to_rgb(img):
+    # TODO: Maybe do Luminance compensation here?
     if len(img.shape) != 3 or img.shape[2] != 3:
         img = img[..., np.newaxis]
         return np.concatenate(3 * (img,), axis=-1)
     else:
         return img
 
+def gray_to_rgb_luminance(img):
+    if len(img.shape) != 3 or img.shape[2] != 3:
+        gray = np.concatenate([1/0.2989 * img, 1/0.5870 * img, 1/0.1140 * img])
+        return gray
+    else:
+        return img
 
 def multiple_file_types(*patterns):
     return itertools.chain.from_iterable(glob.iglob(pattern) for pattern in patterns)
@@ -98,3 +105,27 @@ class PerformanceCounter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         end = timer()
         logger.info("Time needed for function {}: {} secs \n".format(self.function_name, end - self.start))
+
+
+def show_images(img_list, title_list=[], interpolation="nearest"):
+    try:
+        import PyQt6
+    except:
+        pass
+
+    from matplotlib import pyplot as plt
+    if len(title_list) < len(img_list):
+        # create more titles
+        title_list.extend([""] * (len(img_list) - len(title_list)))
+    if len(img_list) == 1:
+        plt.imshow(img_list[0], interpolation=interpolation)
+        plt.title(title_list[0])
+        #plt.get_current_fig_manager().window.showMaximized()
+        plt.show()
+    else:
+        f, ax = plt.subplots(1, len(img_list))
+        for i, img, title in zip(itertools.count(), img_list, title_list):
+            ax[i].imshow(img, interpolation=interpolation)
+            ax[i].set_title(title)
+        #plt.get_current_fig_manager().window.showMaximized()
+        plt.show()

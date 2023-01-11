@@ -19,7 +19,7 @@ import gc
 
 from segmentation.preprocessing.workflow import PreprocessingTransforms
 from segmentation.settings import ColorMap
-from segmentation.util import gray_to_rgb, rgb2gray
+from segmentation.util import gray_to_rgb, rgb2gray, show_images
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
 import math
 from segmentation.preprocessing.basic_binarizer import gauss_threshold
@@ -192,6 +192,7 @@ class XMLDataset(Dataset):
             image = image.astype("uint8") * 255
 
         transformed = self.transforms.transform_train(image, mask)  # TODO: switch between modes based on parameter
+        #show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
         return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):

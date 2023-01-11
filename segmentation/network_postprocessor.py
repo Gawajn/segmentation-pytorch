@@ -42,7 +42,7 @@ class NetworkBaselinePostProcessor:
 
         if keep_dim:
             scale_factor = 1 / res.preprocessed_image.scale_factor
-            baselines = [scale_baseline(bl, scale_factor) for bl in baselines]
+            baselines = [scale_baseline(bl, scale_factor) for bl in baselines] if baselines else []
             return BaselineResult(res, baselines)
         else:
             return BaselineResult(res, baselines)

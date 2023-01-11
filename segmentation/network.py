@@ -4,6 +4,7 @@ from typing import List, Optional, Any
 
 import PIL.Image
 import loguru
+import matplotlib
 import ttach
 import gc
 from collections.abc import Iterable
@@ -189,7 +190,12 @@ class TrainCallback(abc.ABC):
 
 def debug_img(mask, target, original, color_map: ColorMap):
     if color_map is not None:
+        try:
+            import PyQt6
+        except:
+            pass
         from matplotlib import pyplot as plt
+        #matplotlib.use('TkAgg')
         # mean = [0.485, 0.456, 0.406]
         # stds = [0.229, 0.224, 0.225]
 
@@ -206,7 +212,7 @@ def debug_img(mask, target, original, color_map: ColorMap):
         ax[0].imshow(NewImageReconstructor.label_to_colors(target, color_map))
         ax[1].imshow(NewImageReconstructor.label_to_colors(mask, color_map))
         ax[2].imshow(original)
-
+        plt.get_current_fig_manager().window.showMaximized()
         plt.show()
 
 
@@ -262,7 +268,7 @@ class NetworkTrainer(object):
 
             loss.backward()
             predicted = torch.argmax(output.data, 1)
-            #if batch_idx % 50 == 0:
+            #if batch_idx % 1 == 0:
             #    debug_img(output, target, data, self.debug_color_map)
             tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
                                                    num_classes=self.train_settings.classes,
@@ -382,6 +388,7 @@ class EnsemblePredictor(NetworkPredictorBase):
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         single_network_prediction_result: List[PredictionResult] = []
+
         for network, config, transforms in zip(self.networks, self.proc_settings, self.transforms):
             if config.scale_predict:
                 scaled_image = img.scale_area(config.scale_max_area)
@@ -401,8 +408,8 @@ class EnsemblePredictor(NetworkPredictorBase):
 
         res = np.stack([i.probability_map for i in single_network_prediction_result], axis=0)
         prediction = np.mean(res, axis=0)
-        return PredictionResult(source_image=img, preprocessed_image=None, network_input=None,
-                                probability_map=prediction, other=single_network_prediction_result)
+        return PredictionResult(source_image=img, preprocessed_image=single_network_prediction_result[0].preprocessed_image, network_input=single_network_prediction_result[0].network_input,
+                                probability_map=prediction, other=single_network_prediction_result)  #  TODO: Bugfix: preprocessed image must not necessarily be equal
 
 
 class NewImageReconstructor:

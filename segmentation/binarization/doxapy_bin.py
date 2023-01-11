@@ -15,19 +15,20 @@ class InvalidAlgorithm(Exception):
 
 
 class BinarizationAlgorithm(Enum):
-    Threshold = auto()
-    Ocropus = auto()
+    Threshold = "threshold"
+    Ocropus = "ocropus"
     # doxa methods
-    ISauvola = auto()
-    Gatos = auto()
-    Otsu = auto()
-    Wolf = auto()
-    Bernsen = auto()
-    Wan = auto()
+    ISauvola = "isauvola"
+    Sauvola = "sauvola"
+    Gatos = "gatos"
+    Otsu = "otsu"
+    Wolf = "wolf"
+    Bernsen = "bernsen"
+    Wan = "wan"
 
     @classmethod
     def doxa_methods(cls):
-        return {cls.ISauvola, cls.Otsu, cls.Wan,
+        return {cls.ISauvola, cls.Sauvola, cls.Otsu, cls.Wan,
                 cls.Wolf, cls.Bernsen, cls.Gatos}
 
 
@@ -99,6 +100,8 @@ def binarize(image: np.ndarray, algorithm: BinarizationAlgorithm = BinarizationA
         alg = None
         if algorithm == BinarizationAlgorithm.ISauvola:
             alg = doxapy.Binarization.Algorithms.ISAUVOLA
+        elif algorithm == BinarizationAlgorithm.Sauvola:
+            alg = doxapy.Binarization.Algorithms.SAUVOLA
         elif algorithm == BinarizationAlgorithm.Otsu:
             alg = doxapy.Binarization.Algorithms.OTSU
         elif algorithm == BinarizationAlgorithm.Gatos:

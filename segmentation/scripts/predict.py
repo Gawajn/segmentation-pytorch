@@ -85,7 +85,7 @@ def main():
     parser.add_argument("--processes", type=int, default=8)
 
     args = parser.parse_args()
-    image_list = list(itertools.chain.from_iterable([glob.glob(x) for x in args.image_path]))
+    image_list = sorted(itertools.chain.from_iterable([glob.glob(x) for x in args.image_path]))
     base_model_files = [ModelBuilderLoad.from_disk(model_weights=i, device=args.device) for i in args.load]
     base_models = [i.get_model() for i in base_model_files]
     base_configs = [i.get_model_configuration() for i in base_model_files]
@@ -114,8 +114,8 @@ def main():
         nbaselinepred = NetworkBaselinePostProcessor(predictor, config.color_map)
         for img_path in tqdm(image_list):
             simg = SourceImage.load(img_path)
-            image = SourceImage.from_numpy(simg.array())
-            draw = ImageDraw.Draw(image)
+            if args.show_result or args.output_path_debug_images:
+                draw = ImageDraw.Draw(simg.pil_image)
 
             result = nbaselinepred.predict_image(simg)
             for ind, x in enumerate(result.base_lines):
@@ -126,7 +126,7 @@ def main():
                 if args.output_path_debug_images:
                     basename = "debug_" + os.path.basename(img_path)
                     file_path = os.path.join(args.output_path_debug_images, basename)
-                    image.save(file_path)
+                    simg.pil_image.save(file_path)
 
             if args.output_xml and args.output_xml_path is not None:
                 from segmentation.gui.xml_util import TextRegion, BaseLine, TextLine, XMLGenerator
@@ -134,10 +134,10 @@ def main():
                 if result.base_lines is not None:
                     text_lines = []
                     for b_line in result.base_lines:
-                        text_lines.append(TextLine(coords=None, baseline=BaseLine(b_line)))
-                    regions.append(TextRegion(text_lines, coords=None))
+                        text_lines.append(TextLine(coords=b_line + list(reversed(b_line)), baseline=BaseLine(b_line)))
+                    regions.append(TextRegion(text_lines, coords=b_line + list(reversed(b_line))))
 
-                xml_gen = XMLGenerator(image.size[0], image.size[1], os.path.basename(img_path), regions=regions)
+                xml_gen = XMLGenerator(simg.get_width(),simg.get_height(), os.path.basename(img_path), regions=regions)
                 xml_gen.save_textregions_as_xml(args.output_xml_path)
 
 
