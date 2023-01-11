@@ -287,7 +287,7 @@ class NetworkTrainer(object):
             progress_bar.set_description(
                 desc=f"Train E {current_epoch} Loss: {acc_loss / (batch_idx + 1):.4f} {metric_string}",
                 refresh=False)
-            gc.collect()
+            #gc.collect()
 
         for cb in self.callbacks:
             cb.on_train_epoch_end(current_epoch,
