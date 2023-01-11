@@ -13,12 +13,11 @@ from torch.utils import data
 from tqdm import tqdm
 import segmentation_models_pytorch as smp
 
-from segmentation.dataset import process, get_rescale_factor, rescale_pil, label_to_colors
 from segmentation.losses import Losses
 from segmentation.metrics import Metrics
 from segmentation.preprocessing.source_image import SourceImage
-from segmentation.settings import NetworkTrainSettings, ProcessingSettings, ModelConfiguration, ClassSpec, ColorMap, \
-    Preprocessingfunction
+from segmentation.preprocessing.workflow import PreprocessingTransforms
+from segmentation.settings import NetworkTrainSettings, ProcessingSettings, ModelConfiguration, ClassSpec, ColorMap
 import numpy as np
 
 from segmentation.stats import MetricStats, EpochStats
@@ -348,6 +347,8 @@ class NetworkPredictor(NetworkPredictorBase):
         self.network = network
         self.proc_settings = processing_settings
         self.tta_aug = tta_aug
+        self.transforms = PreprocessingTransforms.from_dict(processing_settings.transforms)
+
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         if self.proc_settings.scale_predict:
@@ -355,15 +356,13 @@ class NetworkPredictor(NetworkPredictorBase):
         else:
             scaled_image = img
 
-        input, _ = process(image=scaled_image.array(), mask=scaled_image.array(), rgb=self.proc_settings.rgb,
-                           preprocessing=self.proc_settings.preprocessing.get_preprocessing_function(),
-                           apply_preprocessing=True, augmentation=None, color_map=None,
-                           binary_augmentation=False)
-        input = input.unsqueeze(0)
+        input_img = self.transforms.transform_predict(scaled_image.array())["image"]
 
-        prediction = self.network.predict(input, tta_aug=self.tta_aug)
+        input_img = input_img.unsqueeze(0)
 
-        return PredictionResult(source_image=img, preprocessed_image=scaled_image, network_input=input,
+        prediction = self.network.predict(input_img, tta_aug=self.tta_aug)
+
+        return PredictionResult(source_image=img, preprocessed_image=scaled_image, network_input=input_img,
                                 probability_map=prediction)
 
 
@@ -379,26 +378,24 @@ class EnsemblePredictor(NetworkPredictorBase):
         self.networks = networks
         self.proc_settings = processing_settings
         self.tta_aug = tta_aug
+        self.transforms = [PreprocessingTransforms.from_dict(tr.transforms) for tr in processing_settings]
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         single_network_prediction_result: List[PredictionResult] = []
-        for network, config in zip(self.networks, self.proc_settings):
+        for network, config, transforms in zip(self.networks, self.proc_settings, self.transforms):
             if config.scale_predict:
                 scaled_image = img.scale_area(config.scale_max_area)
             else:
                 scaled_image = img
+            input_img = transforms.transform_predict(scaled_image.array())["image"]
 
-            input, _ = process(image=scaled_image.array(), mask=scaled_image.array(), rgb=config.rgb,
-                               preprocessing=config.preprocessing.get_preprocessing_function(),
-                               apply_preprocessing=True, augmentation=None, color_map=None,
-                               binary_augmentation=False)
-            input = input.unsqueeze(0)
+            input_img = input_img.unsqueeze(0)
 
-            prediction = network.predict(input, self.tta_aug)
+            prediction = network.predict(input_img, self.tta_aug)
             single_network_prediction_result.append(PredictionResult(
                 source_image=img,
                 preprocessed_image=scaled_image,
-                network_input=input,
+                network_input=input_img,
                 probability_map=prediction,
                 other=single_network_prediction_result))
 

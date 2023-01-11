@@ -45,10 +45,10 @@ class PreprocessingTransforms:
     @staticmethod
     def from_dict(d: Dict, lambda_transforms: Dict[str, Callable] = None) -> 'PreprocessingTransforms':
         return PreprocessingTransforms(
-            input_processing=albumentations.from_dict(d["input_transform"]) if d["input_transform"] is not None else None,
+            input_transform=albumentations.from_dict(d["input_transform"]) if d["input_transform"] is not None else None,
             aug_transform=albumentations.from_dict(d["aug_transform"]) if d["aug_transform"] is not None else None,
             tta_transform=albumentations.from_dict(d["tta_transform"]) if d["tta_transform"] is not None else None,
-            post_transforms=albumentations.from_dict("post_transforms") if d["post_transforms"] is not None else None,
+            post_transforms=albumentations.from_dict(d["post_transforms"]) if d["post_transforms"] is not None else None,
             lambda_transforms=lambda_transforms
         )
 
@@ -72,7 +72,7 @@ import albumentations.core.transforms_interface
 
 
 class ColorMapTransform(albu.core.transforms_interface.BasicTransform):
-    def __init__(self, color_map: Dict[int, Tuple[int]]):
+    def __init__(self, color_map: Dict[int, Tuple[int]], **params):
         super().__init__(always_apply=True)
         self.color_map = color_map
 
@@ -115,7 +115,7 @@ class ColorMapTransform(albu.core.transforms_interface.BasicTransform):
 
 
 class GrayToRGBTransform(albu.core.transforms_interface.BasicTransform):
-    def __init__(self):
+    def __init__(self, **params):
         super().__init__(always_apply=True)
 
     def apply_to_image(self, image, **params):
@@ -159,7 +159,7 @@ class BinarizeGreyScaleAugmentation(albu.core.transforms_interface.BasicTransfor
 
 
 class NetworkEncoderTransform(albu.core.transforms_interface.BasicTransform):
-    def __init__(self, preprocessing_function: str):
+    def __init__(self, preprocessing_function: str, **params):
         super().__init__(always_apply=True)
         self.preprocessing_function = preprocessing_function
 

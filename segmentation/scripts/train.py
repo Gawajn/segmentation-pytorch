@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Tuple
 
 import albumentations
 import numpy as np
@@ -232,51 +233,7 @@ def main():
             scaled_image_input=args.custom_model_scaled_image_input,
         )
 
-    def train_arg(train, test, args, model_prefix="") -> ModelWriterCallback:
-        """
-        def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, color_map=None,
-            binary_augmentation=True, ocropy=True, crop=False, crop_x=512, crop_y=512):
-    if rgb:
-        image = gray_to_rgb(image)
-    result = {"image": image}
-    if color_map:
-        if mask.ndim == 3:
-            result["mask"] = color_to_label(mask, color_map)
-        elif mask.ndim == 2:
-            u_values = np.unique(mask)
-            mask = result["mask"]
-            for ind, x in enumerate(u_values):
-                mask[mask == x] = ind
-            result["mask"] = mask
-    else:
-        result["mask"] = mask if mask is not None else image
-
-    if augmentation is not None:
-        result = augmentation(**result)
-
-    if augmentation is not None and binary_augmentation:
-        from segmentation.preprocessing.basic_binarizer import gauss_threshold
-        from segmentation.preprocessing.ocrupus import binarize
-        ran = np.random.randint(1, 5)
-        if ran == 1:
-            if ocropy:
-                binary = binarize(result["image"].astype("float64")).astype("uint8") * 255
-                gray = gray_to_rgb(binary)
-                result["image"] = gray_to_rgb(gray)
-        if ran == 2:
-            image = rgb2gray(result["image"]).astype(np.uint8)
-            result["image"] = gray_to_rgb(gauss_threshold(image))
-    if crop:
-        result = compose([[albu.RandomCrop(
-            crop_y, crop_x, p=1
-        )]])(**result)
-        ## albumentations.augmentations.crops.transforms.RandomResizedCrop
-    if apply_preprocessing is not None and apply_preprocessing:
-        result["image"] = preprocessing(result["image"])
-    result = compose([post_transforms()])(**result)
-    return result["image"], result["mask"]
-
-        """
+    def train_arg(train, test, args, model_prefix="") -> Tuple[ModelWriterCallback, PreprocessingTransforms]:
         def remove_nones(x):
             return [y for y in x if y is not None]
 
@@ -311,14 +268,14 @@ def main():
         )
 
         if args.mode == "xml_region" or args.mode == "xml_baseline":
-            dt = XMLDataset(train, transform=transforms,
+            dt = XMLDataset(train, transforms=transforms,
                             mask_generator=MaskGenerator(settings=mask_settings))
-            d_test = XMLDataset(test, transform=transforms,
+            d_test = XMLDataset(test, transforms=transforms,
                                 mask_generator=MaskGenerator(settings=mask_settings))
 
         else:
-            dt = MaskDataset(train, transform=transforms, scale_area=args.scale_area)
-            d_test = MaskDataset(test, transform=transforms, scale_area=args.scale_area)
+            dt = MaskDataset(train, transforms=transforms, scale_area=args.scale_area)
+            d_test = MaskDataset(test, transforms=transforms, scale_area=args.scale_area)
 
         train_loader = DataLoader(dataset=dt, batch_size=1)
         val_loader = DataLoader(dataset=d_test, batch_size=1)
@@ -357,18 +314,23 @@ def main():
                                  callbacks=callbacks, debug_color_map=config.color_map)
 
         trainer.train_epochs(train_loader=train_loader, val_loader=val_loader, n_epoch=args.n_epoch, lr_schedule=None)
-        return mw
+        return mw, transforms
 
     model_writers = []
+    test_transforms = []
     if args.test_input == [] and args.folds > 1:
         kf = KFold(n_splits=args.folds, shuffle=True, random_state=args.seed)
         for ind, x in enumerate(kf.split(train, None)):
             train_f = train.iloc[x[0]].reset_index(drop=True)
             test_f = train.iloc[x[1]].reset_index(drop=True)
-            model_writers.append(train_arg(train_f, test_f, args=args, model_prefix=f"fold{ind}"))
+            mw, tt = train_arg(train_f, test_f, args=args, model_prefix=f"fold{ind}")
+            model_writers.append(mw)
+            test_transforms.append(tt)
 
     else:
-        model_writers.append(train_arg(train=train, test=test, args=args))
+        mw, tt = train_arg(train=train, test=test, args=args)
+        model_writers.append(mw)
+        test_transforms.append(tt)
 
     if args.eval:
         total_accuracy = 0
@@ -380,15 +342,16 @@ def main():
         elif args.eval_images:
             total_accuracy = 0
             total_loss = 0
-            for ind, x in enumerate(model_writers):
-                ml = ModelBuilderLoad.from_disk(x.get_best_model_path(), device=device).get_model()
+            for ind, (mw,tt) in enumerate(model_writers):
+                mw: ModelWriterCallback = mw
+                tt: PreprocessingTransforms = tt
+                ml = ModelBuilderLoad.from_disk(mw.get_best_model_path(), device=device).get_model()
                 eval_df = dirs_to_pandaframe(args.eval_input, args.eval_mask)
                 if args.mode == "xml_region" or args.mode == "xml_baseline":
-                    d_eval = XMLDataset(eval_df, color_map, transform=compose([default_transform()]),
-                                        mask_generator=MaskGenerator(settings=mask_settings))
+                    d_eval = XMLDataset(eval_df, transforms=tt.get_test_transforms(), scale_area=args.scale_area,  mask_generator=MaskGenerator(settings=mask_settings))
 
                 else:
-                    d_eval = MaskDataset(eval_df, color_map, transform=compose([default_transform()]),
+                    d_eval = MaskDataset(eval_df, transforms=tt.get_test_transforms(),
                                          scale_area=args.scale_area)
                 eval_loader = DataLoader(dataset=d_eval, batch_size=1)
 

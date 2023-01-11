@@ -17,6 +17,7 @@ from skimage.morphology import remove_small_holes
 import albumentations as albu
 import gc
 
+from segmentation.preprocessing.workflow import PreprocessingTransforms
 from segmentation.settings import ColorMap
 from segmentation.util import gray_to_rgb, rgb2gray
 from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, MaskSetting, BaseMaskGenerator, MaskType, PCGTSVersion
@@ -72,59 +73,56 @@ def default_preprocessing(x):
     return x / 255.
 
 
-def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, color_map=None,
-            binary_augmentation=True, ocropy=True, crop=False, crop_x=512, crop_y=512):
-    if rgb:
-        image = gray_to_rgb(image)
-    result = {"image": image}
-    if color_map:
-        if mask.ndim == 3:
-            result["mask"] = color_to_label(mask, color_map)
-        elif mask.ndim == 2:
-            u_values = np.unique(mask)
-            mask = result["mask"]
-            for ind, x in enumerate(u_values):
-                mask[mask == x] = ind
-            result["mask"] = mask
-    else:
-        result["mask"] = mask if mask is not None else image
-
-    if augmentation is not None:
-        result = augmentation(**result)
-
-    if augmentation is not None and binary_augmentation:
-        from segmentation.preprocessing.basic_binarizer import gauss_threshold
-        from segmentation.preprocessing.ocrupus import binarize
-        ran = np.random.randint(1, 5)
-        if ran == 1:
-            if ocropy:
-                binary = binarize(result["image"].astype("float64")).astype("uint8") * 255
-                gray = gray_to_rgb(binary)
-                result["image"] = gray_to_rgb(gray)
-        if ran == 2:
-            image = rgb2gray(result["image"]).astype(np.uint8)
-            result["image"] = gray_to_rgb(gauss_threshold(image))
-    if crop:
-        result = compose([[albu.RandomCrop(
-            crop_y, crop_x, p=1
-        )]])(**result)
-        ## albumentations.augmentations.crops.transforms.RandomResizedCrop
-    if apply_preprocessing is not None and apply_preprocessing:
-        result["image"] = preprocessing(result["image"])
-    result = compose([post_transforms()])(**result)
-    return result["image"], result["mask"]
+# def process(image, mask, rgb, preprocessing, apply_preprocessing, augmentation, color_map=None,
+#             binary_augmentation=True, ocropy=True, crop=False, crop_x=512, crop_y=512):
+#     if rgb:
+#         image = gray_to_rgb(image)
+#     result = {"image": image}
+#     if color_map:
+#         if mask.ndim == 3:
+#             result["mask"] = color_to_label(mask, color_map)
+#         elif mask.ndim == 2:
+#             u_values = np.unique(mask)
+#             mask = result["mask"]
+#             for ind, x in enumerate(u_values):
+#                 mask[mask == x] = ind
+#             result["mask"] = mask
+#     else:
+#         result["mask"] = mask if mask is not None else image
+#
+#     if augmentation is not None:
+#         result = augmentation(**result)
+#
+#     if augmentation is not None and binary_augmentation:
+#         from segmentation.preprocessing.basic_binarizer import gauss_threshold
+#         from segmentation.preprocessing.ocrupus import binarize
+#         ran = np.random.randint(1, 5)
+#         if ran == 1:
+#             if ocropy:
+#                 binary = binarize(result["image"].astype("float64")).astype("uint8") * 255
+#                 gray = gray_to_rgb(binary)
+#                 result["image"] = gray_to_rgb(gray)
+#         if ran == 2:
+#             image = rgb2gray(result["image"]).astype(np.uint8)
+#             result["image"] = gray_to_rgb(gauss_threshold(image))
+#     if crop:
+#         result = compose([[albu.RandomCrop(
+#             crop_y, crop_x, p=1
+#         )]])(**result)
+#         ## albumentations.augmentations.crops.transforms.RandomResizedCrop
+#     if apply_preprocessing is not None and apply_preprocessing:
+#         result["image"] = preprocessing(result["image"])
+#     result = compose([post_transforms()])(**result)
+#     return result["image"], result["mask"]"
 
 
 class MaskDataset(Dataset):
-    def __init__(self, df, color_map, preprocessing=default_preprocessing, transform=None, rgb=True,
-                 scale_area=1000000, crop=False, crop_x=512, crop_y=512):
+    def __init__(self, df, transforms: PreprocessingTransforms = None, scale_area=1000000):
         self.df = df
-        self.color_map = color_map
-        self.augmentation = transform
+        self.transforms = transforms
         self.index = self.df.index.tolist()
-        self.preprocessing = preprocessing
-        self.rgb = rgb
         self.scale_area = scale_area
+
 
     def __getitem__(self, item, apply_preprocessing=True):
         image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
@@ -137,24 +135,21 @@ class MaskDataset(Dataset):
         image = np.array(rescale_pil(image, rescale_factor, 1))
         if image.dtype == bool:
             image = image.astype("uint8") * 255
-        image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
-                              apply_preprocessing=apply_preprocessing, augmentation=self.augmentation,
-                              binary_augmentation=True, color_map=self.color_map)
-        return image, mask, torch.tensor(item)
+
+        transformed = self.transforms.transform_train(image, mask)
+
+        return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
 
 
 class MemoryDataset(Dataset):
-    def __init__(self, df, color_map=None, preprocessing=default_preprocessing, transform=None, rgb=True,
+    def __init__(self, df, transforms: PreprocessingTransforms = None,
                  scale_area=1000000):
         self.df = df
-        self.color_map = color_map
-        self.augmentation = transform
         self.index = self.df.index.tolist()
-        self.preprocessing = preprocessing
-        self.rgb = rgb
+        self.transforms = transforms
         self.scale_area = scale_area
 
     def __getitem__(self, item, apply_preprocessing=True):
@@ -168,31 +163,23 @@ class MemoryDataset(Dataset):
         image = np.array(rescale_pil(pil_image, rescale_factor, 1))
         if image.dtype == bool:
             image = image.astype("uint8") * 255
-        image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
-                              apply_preprocessing=apply_preprocessing, augmentation=self.augmentation,
-                              binary_augmentation=True,
-                              color_map=self.color_map)
 
-        return image, mask, torch.tensor(item)
+        transformed = self.transforms.transform_train(image, mask)
+
+        return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
 
 
 class XMLDataset(Dataset):
-    def __init__(self, df, color_map: ColorMap, mask_generator: BaseMaskGenerator, preprocessing=default_preprocessing,
-                 transform=None, rgb=True, scale_area=1000000, crop=False, crop_x=512, crop_y=512):
+    def __init__(self, df, mask_generator: BaseMaskGenerator,
+                 transforms: PreprocessingTransforms = None, scale_area=1000000):
         self.df = df
-        self.color_map = color_map
-        self.augmentation = transform
+        self.transforms = transforms
         self.index = self.df.index.tolist()
-        self.preprocessing = preprocessing
-        self.rgb = rgb
         self.mask_generator = mask_generator
         self.scale_area = scale_area
-        self.crop = crop
-        self.crop_x = crop_x
-        self.crop_Y = crop_y
 
     def __getitem__(self, item, apply_preprocessing=True):
         image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
@@ -203,39 +190,29 @@ class XMLDataset(Dataset):
         image = np.array(rescale_pil(image, rescale_factor, 1))
         if image.dtype == bool:
             image = image.astype("uint8") * 255
-        image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
-                              apply_preprocessing=apply_preprocessing, augmentation=self.augmentation,
-                              binary_augmentation=True, color_map=self.color_map, crop=self.crop,
-                              crop_x=self.crop_x,
-                              crop_y=self.crop_Y)
-        return image, mask, torch.tensor(item)
+
+        transformed = self.transforms.transform_train(image, mask)  # TODO: switch between modes based on parameter
+        return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
 
 
 class PredictDataset(Dataset):
-    def __init__(self, df, color_map, mask_generator: BaseMaskGenerator, preprocessing=default_preprocessing,
-                 transform=None, rgb=True, pad_factor: int = 32, scale_area=1000000):
+    def __init__(self, df,  transform=None, scale_area=1000000):
         self.df = df
-        self.color_map = color_map
         self.index = self.df.index.tolist()
-        self.preprocessing = preprocessing
-        self.rgb = rgb
-        self.pad_factor = pad_factor
         self.scale_area = scale_area
+        self.transforms = transform
 
     def __getitem__(self, item, apply_preprocessing=True):
         image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
         image = Image.open(image_id)
         rescale_factor = get_rescale_factor(image, self.scale_area)
-
         image = np.array(rescale_pil(image, rescale_factor, 1))
         mask = image
-        image, mask = process(image, mask, rgb=self.rgb, preprocessing=self.preprocessing,
-                              apply_preprocessing=apply_preprocessing, augmentation=None, binary_augmentation=False,
-                              color_map=self.color_map)
-        return image, mask, torch.tensor(item)
+        transformed = self.transforms.transform_train(image, mask)  # TODO: switch between modes based on parameter
+        return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)

@@ -4,6 +4,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from segmentation.model_builder import ModelBuilderLoad
+from segmentation.network import NetworkPredictor
 from segmentation.network_postprocessor import NetworkMaskPostProcessor
 from segmentation.preprocessing.source_image import SourceImage
 from segmentation.settings import ColorMap, ClassSpec
@@ -14,12 +15,14 @@ if __name__ == "__main__":
     mb = ModelBuilderLoad.from_disk(model_weights="/tmp/best.torch", device="cuda")
     config = mb.get_model_configuration()
     net = mb.get_model()
-    image_list = sorted(glob.glob('/home/alexanderh/Documents/datasets/baselines/train/image/*jpg')[:5])
-    cmap = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
-                     ClassSpec(label=1, name="Baseline", color=[255, 0, 255]),
-                     ClassSpec(label=2, name="BaselineBorder", color=[255, 255, 0])])
+    predictor = NetworkPredictor.from_model_config(net,mb.get_model_configuration())
 
-    nmaskpred = NetworkMaskPostProcessor(net, config, cmap)
+    image_list = sorted(glob.glob('/home/alexanderh/Documents/datasets/baselines/train/image/*jpg')[:5])
+    #cmap = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
+    #                 ClassSpec(label=1, name="Baseline", color=[255, 0, 255]),
+    #                 ClassSpec(label=2, name="BaselineBorder", color=[255, 255, 0])])
+    cmap = config.color_map
+    nmaskpred = NetworkMaskPostProcessor(predictor, cmap)
 
     for img_path in tqdm(image_list):
         simg = SourceImage.load(img_path)

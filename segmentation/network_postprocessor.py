@@ -41,10 +41,10 @@ class NetworkBaselinePostProcessor:
         baselines = extract_baselines_from_probability_map(res.probability_map, processes=processes)
 
         if keep_dim:
-            return BaselineResult(res, baselines)
-        else:
             scale_factor = 1 / res.preprocessed_image.scale_factor
             baselines = [scale_baseline(bl, scale_factor) for bl in baselines]
+            return BaselineResult(res, baselines)
+        else:
             return BaselineResult(res, baselines)
 
 
@@ -73,9 +73,9 @@ class NetworkMaskPostProcessor:
         outimg = PIL.Image.fromarray(mask, mode="RGB")
 
         if keep_dim:
-            mask = outimg
-        else:
             mask = outimg.resize(size=(img.get_width(), img.get_height()), resample=PIL.Image.NEAREST)
+        else:
+            mask = outimg
 
         mpr = MaskPredictionResult(prediction_result=res, generated_mask=mask)
         return mpr
