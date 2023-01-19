@@ -13,7 +13,6 @@ tqdm~=4.38.0
 albumentations~=0.4.2
 scikit-image
 opencv-python
-sklearn~=0.0
 ezodf~=0.3.2
 lxml
 shapely~=1.7.0
