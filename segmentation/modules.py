@@ -25,7 +25,7 @@ class Architecture(Enum):
                 'UnetPlusPlus': smp.UnetPlusPlus,
                 'pan': smp.PAN,
                 'deeplabV3': smp.DeepLabV3,
-                'DeepLabV3Plus': smp.DeepLabV3Plus,
+                'deeplabV3plus': smp.DeepLabV3Plus,
 
                 }[self.value]
 

@@ -39,19 +39,25 @@ class ModelBuilderPredefined(ModelBuilderBase):
         model_params['classes'] = self.settings.classes
 
         model_params['encoder_name'] = self.settings.encoder
-        model_params['encoder_depth'] = self.settings.encoder_depth
 
-        if 'decoder_use_batchnorm' in model_params:
+        if 'decoder_use_batchnorm' in model_params and self.settings.use_batch_norm_layer is False:
             model_params['decoder_use_batchnorm'] = False
 
         if 'decoder_channels' in model_params:
             model_params['decoder_channels'] = self.settings.decoder_channel
+
+        if 'encoder_depth' in model_params:
+            model_params['encoder_depth'] = self.settings.encoder_depth
+
+        if self.settings.architecture in [self.settings.architecture.DeepLabV3Plus, self.settings.architecture.DeepLabV3, self.settings.architecture.PAN]:
+            model_params['decoder_channels'] = self.settings.decoder_channel[0]
 
         kwargs = {k: v for k, v in model_params.items() if v is not None}
         model = self.settings.architecture.get_architecture()(**kwargs)
 
         model.to(self.device)
         return Network(model, self.preprocessing_settings, self.device)
+
 
 
 class ModelBuilderMeta(ModelBuilderBase):

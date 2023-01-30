@@ -85,7 +85,7 @@ class PredefinedNetworkSettings(DataClassJSONMixin):
 
     encoder_depth: int = 5
     decoder_channel: Tuple[int, ...] = (256, 128, 64, 32, 16)
-
+    use_batch_norm_layer: bool = False
 
 @dataclass
 class ClassSpec(DataClassJSONMixin):
