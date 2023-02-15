@@ -97,3 +97,7 @@ class SourceImage:
 
     def get_height(self):
         return int(self.array().shape[0])
+
+    def get_grayscale_array(self):
+        return np.array(self.pil_image.convert("L")).astype(np.uint8)
+
