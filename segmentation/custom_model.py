@@ -288,6 +288,10 @@ class AttentionUnet(nn.Module):
         return x_out
 
 
+
+
+
+
 def test():
     # Create 10-class segmentation dummy image and target
     nb_classes = 10

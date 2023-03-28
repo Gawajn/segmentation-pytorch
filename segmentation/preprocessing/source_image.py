@@ -6,7 +6,7 @@ from PIL import Image
 
 from segmentation.binarization.doxapy_bin import BinarizationAlgorithm, BinarizationParams, _needs_binarization, \
     binarize
-from segmentation.dataset import get_rescale_factor
+from segmentation.datasets.dataset import get_rescale_factor
 
 import numpy as np
 

@@ -25,3 +25,4 @@ scipy
 loguru
 doxapy
 mashumaro
+efficientnet-pytorch

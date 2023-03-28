@@ -195,7 +195,7 @@ def debug_img(mask, target, original, color_map: ColorMap):
         except:
             pass
         from matplotlib import pyplot as plt
-        #matplotlib.use('TkAgg')
+        # matplotlib.use('TkAgg')
         # mean = [0.485, 0.456, 0.406]
         # stds = [0.229, 0.224, 0.225]
 
@@ -212,7 +212,7 @@ def debug_img(mask, target, original, color_map: ColorMap):
         ax[0].imshow(NewImageReconstructor.label_to_colors(target, color_map))
         ax[1].imshow(NewImageReconstructor.label_to_colors(mask, color_map))
         ax[2].imshow(original)
-        plt.get_current_fig_manager().window.showMaximized()
+        # plt.get_current_fig_manager().window.showMaximized()
         plt.show()
 
 
@@ -235,11 +235,12 @@ class NetworkTrainer(object):
             optimizer = opt(self.network.model.parameters(), lr=self.train_settings.learningrate_seghead)
         self.optimizer = optimizer
 
-        self.criterion = settings.loss.get_loss()() if settings.loss == Losses.cross_entropy_loss else settings.loss.get_loss()(mode='multiclass')
+        self.criterion = settings.loss.get_loss()() if settings.loss == Losses.cross_entropy_loss else settings.loss.get_loss()(
+            mode='multiclass')
         self.callbacks: List[TrainCallback] = callbacks if callbacks is not None else []
 
     def train_epoch(self, train_loader: data.DataLoader, current_epoch: int = None):
-        #print(torch.is_grad_enabled())
+        # print(torch.is_grad_enabled())
         model = self.network.model
         device = self.device
 
@@ -257,7 +258,6 @@ class NetworkTrainer(object):
             input = padded.float()
 
             output = model(input)
-
 
             output = unpad(output, shape)
             loss = self.criterion(output, target)
@@ -293,7 +293,7 @@ class NetworkTrainer(object):
             progress_bar.set_description(
                 desc=f"Train E {current_epoch} Loss: {acc_loss / (batch_idx + 1):.4f} {metric_string}",
                 refresh=False)
-            #gc.collect()
+            # gc.collect()
 
         for cb in self.callbacks:
             cb.on_train_epoch_end(current_epoch,
@@ -301,7 +301,7 @@ class NetworkTrainer(object):
                                   loss=acc_loss / len(train_loader))
 
     def train_epochs(self, train_loader: data.DataLoader, val_loader: data.DataLoader, n_epoch: int, lr_schedule=None):
-        #criterion = nn.CrossEntropyLoss()
+        # criterion = nn.CrossEntropyLoss()
         self.network.model.float()
         loguru.logger.info('Training started ...')
         for epoch in tqdm(range(0, n_epoch)):
@@ -317,7 +317,8 @@ class NetworkTrainer(object):
                                       padding_value=self.network.proc_settings.input_padding_value,
                                       metrics=self.train_settings.metrics,
                                       metric_watcher_index=self.train_settings.watcher_metric_index,
-                                      classes=self.train_settings.classes, class_weights=self.train_settings.class_weights,
+                                      classes=self.train_settings.classes,
+                                      class_weights=self.train_settings.class_weights,
                                       metric_reduction=self.train_settings.metric_reduction)
                 # debug_color_map=self.debug_color_map)
 
@@ -354,7 +355,6 @@ class NetworkPredictor(NetworkPredictorBase):
         self.proc_settings = processing_settings
         self.tta_aug = tta_aug
         self.transforms = PreprocessingTransforms.from_dict(processing_settings.transforms)
-
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         if self.proc_settings.scale_predict:
@@ -408,8 +408,11 @@ class EnsemblePredictor(NetworkPredictorBase):
 
         res = np.stack([i.probability_map for i in single_network_prediction_result], axis=0)
         prediction = np.mean(res, axis=0)
-        return PredictionResult(source_image=img, preprocessed_image=single_network_prediction_result[0].preprocessed_image, network_input=single_network_prediction_result[0].network_input,
-                                probability_map=prediction, other=single_network_prediction_result)  #  TODO: Bugfix: preprocessed image must not necessarily be equal
+        return PredictionResult(source_image=img,
+                                preprocessed_image=single_network_prediction_result[0].preprocessed_image,
+                                network_input=single_network_prediction_result[0].network_input,
+                                probability_map=prediction,
+                                other=single_network_prediction_result)  # TODO: Bugfix: preprocessed image must not necessarily be equal
 
 
 class NewImageReconstructor:

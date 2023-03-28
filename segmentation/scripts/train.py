@@ -24,7 +24,7 @@ import loguru
 from pagexml_mask_converter.pagexml_to_mask import MaskSetting, PCGTSVersion, MaskType, MaskGenerator
 from torch.utils.data import DataLoader
 
-from segmentation.dataset import dirs_to_pandaframe, XMLDataset, compose, MaskDataset
+from segmentation.datasets.dataset import dirs_to_pandaframe, XMLDataset, compose, MaskDataset
 from segmentation.optimizer import Optimizers
 from sklearn.model_selection import KFold
 from segmentation.settings import color_map_load_helper, ModelConfiguration, ProcessingSettings, \
@@ -350,7 +350,7 @@ def main():
 
     else:
         network, config = build_model_from_args(args, color_map=color_map)
-        from segmentation.dataset import default_transform
+        from segmentation.datasets.dataset import default_transform
 
     model_writers = []
     test_transforms = []

@@ -118,7 +118,7 @@ class Preprocessingfunction(DataClassJSONMixin):
     name: str = "default"
 
     def get_preprocessing_function(self):
-        from segmentation.dataset import default_preprocessing
+        from segmentation.datasets.dataset import default_preprocessing
 
         if self.name == "default":
             return default_preprocessing

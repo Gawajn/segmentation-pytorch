@@ -157,7 +157,6 @@ class MemoryDataset(Dataset):
 
         image = image_id
         mask = mask_id
-
         pil_image = Image.fromarray(image)
         rescale_factor = get_rescale_factor(pil_image, scale_area=self.scale_area)
         image = np.array(rescale_pil(pil_image, rescale_factor, 1))
