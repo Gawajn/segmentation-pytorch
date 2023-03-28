@@ -26,3 +26,4 @@ loguru
 doxapy
 mashumaro
 efficientnet-pytorch
+dataclass_json
