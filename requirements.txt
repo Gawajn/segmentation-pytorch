@@ -13,7 +13,6 @@ tqdm
 albumentations
 scikit-image
 opencv-python-headless
-sklearn
 ezodf
 lxml
 shapely
