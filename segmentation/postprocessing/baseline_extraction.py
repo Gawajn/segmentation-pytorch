@@ -102,44 +102,45 @@ def calculate_distance(index, ccs, maximum_angle, baseline_border_image):
 
 
 def extract_baselines_from_probability_map(image_map: np.array, base_line_index=1, base_line_border_index=2,
-                                           original=None, processes=8):
+                                           original=None, processes=8, min_cc_area=10):
     image = np.argmax(image_map, axis=-1)
-    #image2 = np.zeros(image_map[:, :, 0].shape)
-    #map = scipy.special.softmax(image_map, axis=-1)
-
-    #bl = map[:, :, 1] > 0.8
-    #border = map[:, :, 2] > 0.5
-    #print(image2.shape)
-    #print(bl.shape)
-    #print(border.shape)
-    #from matplotlib import pyplot as plt
-    #plt.imshow(bl.astype(int))
-    #plt.show()
-    #image2 = np.stack((image2, bl.astype(int), border.astype(int)))
-
-    #print(image2.shape)
-    #image = np.argmax(image2, axis=-1)
-    #from matplotlib import pyplot as plt
-    #plt.imshow(image.astype(int))
-    #plt.show()
-    return extract_baselines(image_map=image, base_line_index=base_line_index,
-                             base_line_border_index=base_line_border_index, original=original, processes=processes)
+    with PerformanceCounter(function_name="baseline Extraction"):
+        baselines = extract_baselines(image_map=image, base_line_index=base_line_index,
+                                      base_line_border_index=base_line_border_index, original=original,
+                                      processes=processes, min_cc_area=min_cc_area)
+    return baselines
 
 
-def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_index=2, original=None, processes=1, connection_width=100):
+def extracted_ccs_optimized(array: np.array):
+    raveled_array = array.ravel()
+
+    index = np.arange(len(raveled_array))
+    sort_idx = np.argsort(raveled_array)
+    cnt = np.bincount(raveled_array)
+    res = np.split(index[sort_idx], np.cumsum(cnt[:-1]))[1:]
+    ccs = [np.unravel_index(res[ind], array.shape) for ind, i in enumerate(res)]
+    return ccs
+
+
+def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_index=2, original=None, processes=1,
+                      connection_width=100, min_cc_area=10):
     from scipy.ndimage.measurements import label
+    with PerformanceCounter(function_name="CCExtraction Line"):
 
-    base_ind = np.where(image_map == base_line_index)
-    base_border_ind = np.where(image_map == base_line_border_index)
+        base_ind = np.where(image_map == base_line_index)
+    with PerformanceCounter(function_name="CCExtraction Border"):
+
+        base_border_ind = np.where(image_map == base_line_border_index)
 
     baseline = np.zeros(image_map.shape)
     baseline_border = np.zeros(image_map.shape)
     baseline[base_ind] = 1
     baseline_border[base_border_ind] = 1
-    baseline_ccs, n_baseline_ccs = label(baseline, structure=[[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+    with PerformanceCounter(function_name="CC extraction"):
 
-    baseline_ccs = [np.where(baseline_ccs == x) for x in range(1, n_baseline_ccs + 1)]
-    baseline_ccs = [BaseLineCCs(x, 'baseline') for x in baseline_ccs if len(x[0]) > 10]
+        baseline_ccs, n_baseline_ccs = label(baseline, structure=[[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+        baseline_ccs = extracted_ccs_optimized(baseline_ccs)
+    baseline_ccs = [BaseLineCCs(x, 'baseline') for x in baseline_ccs if len(x[0]) > min_cc_area]
 
     all_ccs = baseline_ccs  # + baseline_border_ccs
     logger.info("Extracted {} CCs from probability map \n".format(len(all_ccs)))
@@ -168,7 +169,8 @@ def extract_baselines(image_map: np.array, base_line_index=1, base_line_border_i
     if np.sum(matrix) == 0:
         print("Empty Image")
         return
-    t = DBSCAN(eps=connection_width, min_samples=1, metric="precomputed").fit(matrix)
+    with PerformanceCounter(function_name="DBSCan"):
+        t = DBSCAN(eps=connection_width, min_samples=1, metric="precomputed").fit(matrix)
 
     ccs = []
     for x in np.unique(t.labels_):

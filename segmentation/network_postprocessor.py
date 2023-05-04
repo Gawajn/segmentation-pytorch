@@ -20,6 +20,11 @@ class BaselineResult:
     base_lines: List[List[Tuple[int, int]]]
 
 
+@dataclass
+class BaseLinePostProcessorConfig:
+    min_cc_area = 10
+
+
 def scale_baseline(baseline, scale_factor: float = 1):
     if scale_factor == 1 or scale_factor == 1.0:
         return baseline
@@ -32,13 +37,14 @@ class NetworkBaselinePostProcessor:
     def from_single_predictor(cls, predictor: NetworkPredictor, mc: ModelConfiguration):
         return cls(predictor, mc.color_map)
 
-    def __init__(self, predictor: NetworkPredictorBase, color_map: ColorMap = None):
+    def __init__(self, predictor: NetworkPredictorBase, color_map: ColorMap = None,
+                 base_line_post_processor_config=BaseLinePostProcessorConfig()):
         self.predictor = predictor
         self.color_map = color_map
 
     def predict_image(self, img: SourceImage, keep_dim: bool = True, processes: int = 1) -> PIL.Image:
         res = self.predictor.predict_image(img)
-        baselines = extract_baselines_from_probability_map(res.probability_map, processes=processes)
+        baselines = extract_baselines_from_probability_map(res.probability_map, processes=processes, min_cc_area=1)
 
         if keep_dim:
             scale_factor = 1 / res.preprocessed_image.scale_factor
