@@ -114,19 +114,20 @@ def main():
         nbaselinepred = NetworkBaselinePostProcessor(predictor, config.color_map)
         for img_path in tqdm(image_list):
             simg = SourceImage.load(img_path)
-            if args.show_result or args.output_path_debug_images:
-                draw = ImageDraw.Draw(simg.pil_image)
+            simg.pil_image = simg.pil_image.convert('RGB')
+            draw = ImageDraw.Draw(simg.pil_image)
 
             result = nbaselinepred.predict_image(simg)
             for ind, x in enumerate(result.base_lines):
+
                 t = list(itertools.chain.from_iterable(x))
                 a = t[::]
                 if args.show_result:
                     draw.line(a, fill=colors[ind % len(colors)], width=4)
-                if args.output_path_debug_images:
-                    basename = "debug_" + os.path.basename(img_path)
-                    file_path = os.path.join(args.output_path_debug_images, basename)
-                    simg.pil_image.save(file_path)
+            if args.output_path_debug_images:
+                basename = "debug_" + os.path.basename(img_path)
+                file_path = os.path.join(args.output_path_debug_images, basename)
+                simg.pil_image.save(file_path)
 
             if args.output_xml and args.output_xml_path is not None:
                 from segmentation.gui.xml_util import TextRegion, BaseLine, TextLine, XMLGenerator

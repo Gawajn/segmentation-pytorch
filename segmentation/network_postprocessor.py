@@ -23,6 +23,7 @@ class BaselineResult:
 @dataclass
 class BaseLinePostProcessorConfig:
     min_cc_area = 10
+    max_cc_distance = 100
 
 
 def scale_baseline(baseline, scale_factor: float = 1):
@@ -41,10 +42,13 @@ class NetworkBaselinePostProcessor:
                  base_line_post_processor_config=BaseLinePostProcessorConfig()):
         self.predictor = predictor
         self.color_map = color_map
+        self.config = base_line_post_processor_config
 
     def predict_image(self, img: SourceImage, keep_dim: bool = True, processes: int = 1) -> PIL.Image:
         res = self.predictor.predict_image(img)
-        baselines = extract_baselines_from_probability_map(res.probability_map, processes=processes, min_cc_area=1)
+        baselines = extract_baselines_from_probability_map(res.probability_map, processes=processes,
+                                                           min_cc_area=self.config.min_cc_area,
+                                                           min_cc_distance=self.config.max_cc_distance)
 
         if keep_dim:
             scale_factor = 1 / res.preprocessed_image.scale_factor

@@ -102,12 +102,12 @@ def calculate_distance(index, ccs, maximum_angle, baseline_border_image):
 
 
 def extract_baselines_from_probability_map(image_map: np.array, base_line_index=1, base_line_border_index=2,
-                                           original=None, processes=8, min_cc_area=10):
+                                           original=None, processes=8, min_cc_area=10, max_cc_distance=100):
     image = np.argmax(image_map, axis=-1)
     with PerformanceCounter(function_name="baseline Extraction"):
         baselines = extract_baselines(image_map=image, base_line_index=base_line_index,
                                       base_line_border_index=base_line_border_index, original=original,
-                                      processes=processes, min_cc_area=min_cc_area)
+                                      processes=processes, min_cc_area=min_cc_area, connection_width=max_cc_distance)
     return baselines
 
 
