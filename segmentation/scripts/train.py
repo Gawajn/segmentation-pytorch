@@ -278,7 +278,7 @@ def build_model_from_args(args, color_map: ColorMap) -> Tuple[Network, ModelConf
 def build_model_from_loaded(args) -> Tuple[Network, ModelConfiguration]:
     base_model_file = ModelBuilderLoad.from_disk(model_weights=args.load, device=args.device)
     base_model = base_model_file.get_model()
-    base_config = base_model.get_model_configuration()
+    base_config = base_model_file.get_model_configuration()
     return base_model, base_config
 
 
