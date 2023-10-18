@@ -142,11 +142,14 @@ def main():
                         help="load a json in the old file format and parse it")
     parser.add_argument("--color_map", type=str, required=False,
                         help="path to color map to load")
+    parser.add_argument("--use_predefined_baseline_color_map", required=False,
+                        help="path to color map to load", action="store_true")
     parser.add_argument("-o", type=str, help="name of the output file (.json)", required=False)
 
     args = parser.parse_args()
 
     with open(args.json) as f:
+        print(json.loads(f.read()))
         settings = HistoricalTrainSettings.from_json(f.read())
 
     color_map = None
@@ -162,6 +165,11 @@ def main():
                 name = ll[1]
                 cm.class_spec.append(ClassSpec(int(label), str(name), colors))
         color_map = cm
+
+    if args.use_predefined_baseline_color_map:
+        color_map = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
+                              ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
+                              ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
 
     mf = ModelFile(ModelConfiguration(
         custom_model_settings=settings.CUSTOM_MODEL.to_custom_model_settings(scaled_image_input=False,
