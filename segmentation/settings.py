@@ -20,9 +20,9 @@ from mashumaro.mixins.json import DataClassJSONMixin
 @dataclass
 class CustomModelSettings(DataClassJSONMixin):
     classes: int
-    encoder_filter: List[int]
-    decoder_filter: List[int]
-    attention_encoder_filter: List[int]
+    encoder_filter: Union[None, List[int]]
+    decoder_filter: Union[None, List[int]]
+    attention_encoder_filter: Union[None, List[int]]
     type: str = "attentionunet"
     kernel_size: int = 3
     padding: int = 1
@@ -69,7 +69,7 @@ class NetworkTrainSettings:
     metric_reduction: MetricReduction = MetricReduction.micro
     metrics: List[Metrics] = field(default_factory=lambda: [NetworkTrainSettings.default_metric()])
     watcher_metric_index: int = 0
-    class_weights: List[float] = None
+    class_weights: Union[None, List[float]] = None
     processes: int = 0
 
     @staticmethod
