@@ -7,7 +7,7 @@ import pandas as pd
 import os
 import numpy as np
 from albumentations import (HorizontalFlip, ShiftScaleRotate, Normalize, Resize, Compose, GaussNoise)
-from albumentations.pytorch.transforms import ToTensorV2, ToTensor
+from albumentations.pytorch.transforms import ToTensorV2
 import json
 from ast import literal_eval
 import random
@@ -186,7 +186,13 @@ class XMLDataset(Dataset):
         rescale_factor = get_rescale_factor(image, scale_area=self.scale_area)
 
         mask = self.mask_generator.get_mask(mask_id, rescale_factor)
+
         image = np.array(rescale_pil(image, rescale_factor, 1))
+        #from  matplotlib import pyplot as plt
+        #fix, ax = plt.subplots(1, 2, True, True)
+        #ax[0].imshow(mask)
+        #ax[1].imshow(image)
+        #plt.show()
         if image.dtype == bool:
             image = image.astype("uint8") * 255
 
@@ -492,12 +498,6 @@ if __name__ == '__main__':
                            BASELINELENGTH=10)
     dt = XMLDataset(a, map, transform=compose([default_transform(), resize_transforms()]), mask_generator=MaskGenerator(settings=settings))
     d_test = XMLDataset(b, map, transform=compose([default_transform()]), mask_generator=MaskGenerator(settings=settings))
-
-    model = Model
-
-
-
-
 
 
 
