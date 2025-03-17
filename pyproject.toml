@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixel_classifier_torch"
+description = "Simple segmentation framework"
+authors = [
+    {name = "Alexander Hartelt"},
+]
+readme = "README.md"
+version = "0.1.0"
+keywords = ["layout", "pagesegmentation"]
+
+license = {text = "BSD 3-Clause License"}
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.scripts]
+    pytorchseg_predict = 'segmentation.scripts.predict:main'
