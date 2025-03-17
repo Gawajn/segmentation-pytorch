@@ -79,7 +79,7 @@ import albumentations.core.transforms_interface
 
 class ColorMapTransform(albu.core.transforms_interface.BasicTransform):
     def __init__(self, color_map: Dict[int, Tuple[int]], **params):
-        super().__init__(always_apply=True)
+        super().__init__(p=1)
         self.color_map = color_map
 
     def color_to_label(self, mask):
@@ -118,7 +118,7 @@ class ColorMapTransform(albu.core.transforms_interface.BasicTransform):
 
 class GrayToRGBTransform(albu.core.transforms_interface.BasicTransform):
     def __init__(self, **params):
-        super().__init__(always_apply=True)
+        super().__init__(p=1)
 
     def apply_to_image(self, image, **params):
         return gray_to_rgb(image)
@@ -177,7 +177,7 @@ class BinarizeDoxapy(albu.core.transforms_interface.BasicTransform):
 
 class NetworkEncoderTransform(albu.core.transforms_interface.BasicTransform):
     def __init__(self, preprocessing_function: str, **params):
-        super().__init__(always_apply=True)
+        super().__init__(p=1)
         self.preprocessing_function = preprocessing_function
 
     def apply_to_image(self, image, **params):
