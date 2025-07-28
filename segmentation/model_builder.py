@@ -57,7 +57,7 @@ class ModelBuilderPredefined(ModelBuilderBase):
 
         # Only Unet supported yet
         if self.settings.number_of_heads > 1:
-            from segmentation.multi_head_neatwork import MultiHeadNetwork
+            from segmentation.multi_head_network import MultiHeadNetwork
             output_channels = kwargs.get('decoder_channels', None)[-1] if kwargs.get('decoder_channels', None)  is not None else None
             model = MultiHeadNetwork(model, self.settings.number_of_heads, kwargs.get('activation', None), 1 if kwargs.get('upsampling', None) is None else kwargs.get('upsampling', None), add_classes=self.settings.add_classes, out_channels=output_channels)
 
