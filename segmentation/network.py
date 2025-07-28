@@ -258,16 +258,30 @@ class NetworkTrainer(object):
             input = padded.float()
 
             output = model(input)
+            loss = 0
 
-            output = unpad(output, shape)
-            loss = self.criterion(output, target)
+            if self.train_settings.additional_heads>0:
+                output_m = unpad(output[0], shape)
+                loss = self.criterion(output_m, target)
+                for i in output[1]:
+                    output_h = unpad(i, shape)
+                    loss += self.criterion(output_h, target)
+                loss = loss / (len(output[1]) + 1)
+            else:
+                output = unpad(output, shape)
+                loss = self.criterion(output, target)
 
             loss = loss / self.train_settings.batch_accumulation
             acc_loss += float(loss)
             model.zero_grad()  # Reset gradients tensors
 
             loss.backward()
-            predicted = torch.argmax(output.data, 1)
+            predicted = None
+            if self.train_settings.additional_heads>0:
+                predicted = torch.argmax(unpad(output[0].data, shape), 1)
+            else:
+                predicted = torch.argmax(unpad(output.data, shape), 1)
+
             #if batch_idx % 1 == 0:
             #    debug_img(output, target, data, self.debug_color_map)
             tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,

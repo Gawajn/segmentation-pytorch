@@ -6,7 +6,7 @@ from pagexml_mask_converter.pagexml_to_mask import MaskGenerator, PCGTSVersion, 
 from torch.utils.data import DataLoader
 
 from segmentation.callback import ModelWriterCallback
-from segmentation.dataset import dirs_to_pandaframe, load_image_map_from_file, MaskDataset, compose
+from segmentation.datasets.dataset import dirs_to_pandaframe, load_image_map_from_file, MaskDataset, compose
 from segmentation.model_builder import ModelBuilderMeta
 from segmentation.modules import Architecture
 from segmentation.network import NetworkTrainer
@@ -47,9 +47,10 @@ if __name__ == '__main__':
     cmap = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
                      ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
                      ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
-
+    add_classes = [2]
+    add_number_of_heads = 1
     predef = PredefinedNetworkSettings(architecture=Architecture.UNET,
-                                       classes=len(cmap))
+                                       classes=len(cmap), number_of_heads=2, add_classes=add_classes)
 
     input_transforms = albumentations.Compose(remove_nones([
         GrayToRGBTransform() if True else None,
@@ -71,7 +72,7 @@ if __name__ == '__main__':
         post_transforms=post_transforms,
     )
 
-    from segmentation.dataset import default_transform, dirs_to_pandaframe, load_image_map_from_file, XMLDataset
+    from segmentation.datasets.dataset import default_transform, dirs_to_pandaframe, load_image_map_from_file, XMLDataset
 
     settings = MaskSetting(MASK_TYPE=MaskType.BASE_LINE, PCGTS_VERSION=PCGTSVersion.PCGTS2013, LINEWIDTH=5,
                            BASELINELENGTH=10)
@@ -91,6 +92,7 @@ if __name__ == '__main__':
                                                                           decoder_filter=[16, 32, 64, 128],
                                                                           attention_encoder_filter=[16, 32, 64, 128],
                                                                           attention=False
+
                                                                           ),
                                 preprocessing_settings=ProcessingSettings(transforms.to_dict(), input_padding_value=32,
                                                                           rgb=True),
@@ -99,7 +101,9 @@ if __name__ == '__main__':
     network = ModelBuilderMeta(config, "cuda").get_model()
 
     mw = ModelWriterCallback(network, config, save_path=Path("/tmp"))
-    trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(cmap)), "cuda",
-                             callbacks=[mw], debug_color_map=config.color_map)
+    trainer = NetworkTrainer(network, NetworkTrainSettings(classes=len(cmap), additional_heads= add_number_of_heads,
+                                                           additional_classes=add_classes), "cuda",
+                             callbacks=[mw], debug_color_map=config.color_map,
+                             )
 
     trainer.train_epochs(train_loader=train_loader, val_loader=val_loader, n_epoch=1, lr_schedule=None)

@@ -71,6 +71,9 @@ class NetworkTrainSettings:
     watcher_metric_index: int = 0
     class_weights: Union[None, List[float]] = None
     processes: int = 0
+    ## additional heads
+    additional_heads: int = 0
+    additional_classes: List[int] = field(default_factory=list)
 
     @staticmethod
     def default_metric():
@@ -86,6 +89,9 @@ class PredefinedNetworkSettings(DataClassJSONMixin):
     encoder_depth: int = 5
     decoder_channel: Tuple[int, ...] = (256, 128, 64, 32, 16)
     use_batch_norm_layer: bool = False
+
+    number_of_heads: int = 1
+    add_classes: List[int] = field(default_factory=list)
 
 @dataclass
 class ClassSpec(DataClassJSONMixin):
