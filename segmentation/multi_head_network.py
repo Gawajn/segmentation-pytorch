@@ -19,6 +19,7 @@ class MultiHeadNetwork(torch.nn.Module):
                 kernel_size=1,
                 upsampling=upsampling,
             )
+            self.heads.append(head)
             setattr(self, f'head_{i}', head)
         self.initialize()
 
@@ -48,7 +49,7 @@ class MultiHeadNetwork(torch.nn.Module):
 
         masks = self.model.segmentation_head(decoder_output)
         for i in self.heads:
-            add_masks.append(i(*features))
+            add_masks.append(i(decoder_output))
         if self.model.classification_head is not None:
             labels = self.model.classification_head(features[-1])
             return masks, labels, add_masks

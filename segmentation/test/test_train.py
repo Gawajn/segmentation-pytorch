@@ -17,13 +17,12 @@ from segmentation.settings import ModelConfiguration, CustomModelSettings, Proce
 
 if __name__ == '__main__':
     a = dirs_to_pandaframe(
-        ['/home/alexanderh/Documents/datasets/baselines/train/image/'],
-        ['/home/alexanderh/Documents/datasets/baselines/train/page/'])
+        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/image/'],
+        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/page/'])
 
     b = dirs_to_pandaframe(
-        ['/home/alexanderh/Documents/datasets/baselines/test/image/'],
-        ['/home/alexanderh/Documents/datasets/baselines/test/page/'])
-
+        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/test/image/'],
+        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/test/page/'])
 
     def remove_nones(x):
         return [y for y in x if y is not None]
@@ -40,14 +39,14 @@ if __name__ == '__main__':
                 albu.CLAHE()]),
             albu.RandomScale(),
 
-        ])
+        ], additional_targets={'add_symbols_mask': 'mask'})
         return result
 
 
     cmap = ColorMap([ClassSpec(label=0, name="Background", color=[255, 255, 255]),
                      ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
                      ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
-    add_classes = [2]
+    add_classes = [3]
     add_number_of_heads = 1
     predef = PredefinedNetworkSettings(architecture=Architecture.UNET,
                                        classes=len(cmap), number_of_heads=2, add_classes=add_classes)
@@ -55,7 +54,7 @@ if __name__ == '__main__':
     input_transforms = albumentations.Compose(remove_nones([
         GrayToRGBTransform() if True else None,
         ColorMapTransform(color_map=cmap.to_albumentation_color_map())
-    ]))
+    ]), additional_targets={'add_symbols_mask': 'mask'} )
 
     aug_transforms = default_transform()
     tta_transforms = None
@@ -63,7 +62,7 @@ if __name__ == '__main__':
     post_transforms = albumentations.Compose(remove_nones([
         NetworkEncoderTransform(predef.encoder),
         ToTensorV2()
-    ]))
+    ]), additional_targets={'add_symbols_mask': 'mask'})
 
     transforms = PreprocessingTransforms(
         input_transform=input_transforms,

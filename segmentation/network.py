@@ -249,7 +249,13 @@ class NetworkTrainer(object):
         metric_stats = EpochStats([MetricStats(name=i.name) for i in self.train_settings.metrics])
 
         acc_loss = 0
-        for batch_idx, (data, target, id) in progress_bar:
+        for batch_idx, res in progress_bar:
+            data, target, target2, id = None, None, None, None
+            if len(res) == 3:
+                data, target, id = res
+            else:
+                data, target, target2, id = res
+                target2 = target2.to(device, dtype=torch.int64)
             data, target = data.to(device), target.to(device, dtype=torch.int64)
 
             shape = list(data.shape)[2:]
@@ -259,20 +265,20 @@ class NetworkTrainer(object):
 
             output = model(input)
             loss = 0
-
             if self.train_settings.additional_heads>0:
                 output_m = unpad(output[0], shape)
                 loss = self.criterion(output_m, target)
                 for i in output[1]:
                     output_h = unpad(i, shape)
-                    loss += self.criterion(output_h, target)
+                    lossd =  self.criterion(output_h, target2)
+                    loss += lossd
                 loss = loss / (len(output[1]) + 1)
             else:
                 output = unpad(output, shape)
                 loss = self.criterion(output, target)
 
             loss = loss / self.train_settings.batch_accumulation
-            acc_loss += float(loss)
+            acc_loss += loss.to(dtype=float)
             model.zero_grad()  # Reset gradients tensors
 
             loss.backward()

@@ -115,6 +115,14 @@ def default_preprocessing(x):
 #     result = compose([post_transforms()])(**result)
 #     return result["image"], result["mask"]"
 
+def extract_data_from_pd(df, item):
+    image_id, mask_id = df.get('images')[item], df.get('masks')[item]
+    mask2_id = None
+    try:
+        mask2_id = df.get('add_symbols_mask')[item]
+    except:
+        pass
+    return image_id, mask_id, mask2_id
 
 class MaskDataset(Dataset):
     def __init__(self, df, transforms: PreprocessingTransforms = None, scale_area=1000000):
@@ -153,7 +161,7 @@ class MemoryDataset(Dataset):
         self.scale_area = scale_area
 
     def __getitem__(self, item, apply_preprocessing=True):
-        image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
+        image_id, mask_id, mask_id2 = extract_data_from_pd(self.df, item)
 
         image = image_id
         mask = mask_id
@@ -181,11 +189,13 @@ class XMLDataset(Dataset):
         self.scale_area = scale_area
 
     def __getitem__(self, item, apply_preprocessing=True):
-        image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
+        image_id, mask_id, mask_id2 = extract_data_from_pd(self.df, item)
+
         image = Image.open(image_id)
         rescale_factor = get_rescale_factor(image, scale_area=self.scale_area)
 
         mask = self.mask_generator.get_mask(mask_id, rescale_factor)
+        mask2 = self.mask_generator.get_mask(mask_id2, rescale_factor)
 
         image = np.array(rescale_pil(image, rescale_factor, 1))
         #from  matplotlib import pyplot as plt
@@ -196,9 +206,9 @@ class XMLDataset(Dataset):
         if image.dtype == bool:
             image = image.astype("uint8") * 255
 
-        transformed = self.transforms.transform_train(image, mask)  # TODO: switch between modes based on parameter
+        transformed = self.transforms.transform_train(image, mask, mask2=mask2)  # TODO: switch between modes based on parameter
         #show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
-        return transformed["image"], transformed["mask"], torch.tensor(item)
+        return transformed["image"], transformed["mask"], transformed["add_symbols_mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
@@ -212,7 +222,7 @@ class PredictDataset(Dataset):
         self.transforms = transform
 
     def __getitem__(self, item, apply_preprocessing=True):
-        image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
+        image_id, mask_id, mask_id2 = extract_data_from_pd(self.df, item)
         image = Image.open(image_id)
         rescale_factor = get_rescale_factor(image, self.scale_area)
         image = np.array(rescale_pil(image, rescale_factor, 1))
@@ -263,7 +273,7 @@ def dirs_to_pandaframe(images_dir: List[str], masks_dir: List[str], verify_filen
 
     else:
         base_names = None
-    df = pd.DataFrame(data={'images': img, 'masks': m})
+    df = pd.DataFrame(data={'images': img, 'masks': m, 'add_symbols_mask': m})
 
     return df
 

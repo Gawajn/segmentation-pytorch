@@ -25,8 +25,8 @@ class PreprocessingTransforms:
             "post_transforms": albu.to_dict(self.post_transforms) if self.post_transforms else None
         }
 
-    def transform_train(self, image, mask) -> Dict:
-        res = {"image": image, "mask": mask}
+    def transform_train(self, image, mask, mask2=None) -> Dict:
+        res = {"image": image, "mask": mask, "add_symbols_mask": mask2}
         if self.input_transform:
             res = self.input_transform(**res)
         if self.aug_transform:
