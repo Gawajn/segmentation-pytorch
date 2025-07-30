@@ -17,12 +17,12 @@ from segmentation.settings import ModelConfiguration, CustomModelSettings, Proce
 
 if __name__ == '__main__':
     a = dirs_to_pandaframe(
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/image/'],
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/train/page/'])
+        ['/home/alexanderh/Documents/datasets/baselines/train/image/'],
+        ['/home/alexanderh/Documents/datasets/baselines/train/page/'])
 
     b = dirs_to_pandaframe(
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/test/image/'],
-        ['/home/alexander/Dokumente/dataset/READ-ICDAR2019-cBAD-dataset/test/page/'])
+        ['/home/alexanderh/Documents/datasets/baselines/test/image/'],
+        ['/home/alexanderh/Documents/datasets/baselines/test/page/'])
 
     def remove_nones(x):
         return [y for y in x if y is not None]
@@ -47,9 +47,9 @@ if __name__ == '__main__':
                      ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
                      ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
     add_classes = [3]
-    add_number_of_heads = 1
+    add_number_of_heads = 0
     predef = PredefinedNetworkSettings(architecture=Architecture.UNET,
-                                       classes=len(cmap), number_of_heads=2, add_classes=add_classes)
+                                       classes=len(cmap), add_number_of_heads=add_number_of_heads, add_classes=add_classes)
 
     input_transforms = albumentations.Compose(remove_nones([
         GrayToRGBTransform() if True else None,
@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     settings = MaskSetting(MASK_TYPE=MaskType.BASE_LINE, PCGTS_VERSION=PCGTSVersion.PCGTS2013, LINEWIDTH=5,
                            BASELINELENGTH=10)
-    dt = XMLDataset(a, transforms=transforms,
+    dt = XMLDataset(a[:5], transforms=transforms,
                     mask_generator=MaskGenerator(settings=settings))
     d_test = XMLDataset(a[:5], transforms=transforms.get_test_transforms(),
                         mask_generator=MaskGenerator(settings=settings))

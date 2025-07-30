@@ -3,15 +3,15 @@ from segmentation_models_pytorch.base import SegmentationModel, SegmentationHead
 
 
 class MultiHeadNetwork(torch.nn.Module):
-    def __init__(self, model, number_of_heads: int, activation=None, upsampling=1, add_classes=None, out_channels=None):
+    def __init__(self, model, additional_number_of_heads: int, activation=None, upsampling=1, add_classes=None, out_channels=None):
         super().__init__()
         if add_classes is None:
             add_classes = []
         self.model = model
 
-        self.number_of_heads = number_of_heads
+        self.number_of_heads = additional_number_of_heads
         self.heads = []
-        for i in range(self.number_of_heads-1):
+        for i in range(self.number_of_heads):
             head = SegmentationHead(
                 in_channels=out_channels,
                 out_channels=add_classes[i],

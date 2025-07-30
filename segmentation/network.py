@@ -43,7 +43,7 @@ def unpad(tensor, o_shape):
 
 
 def test(model, device, test_loader, criterion, classes, metrics: List[Metrics], metric_reduction,
-         metric_watcher_index=0, class_weights=None, padding_value=32, debug_color_map=None, ):
+         metric_watcher_index=0, class_weights=None, padding_value=32, debug_color_map=None, additional_heads=0):
     model.eval()
     test_loss = 0
     correct = 0
@@ -52,7 +52,13 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
 
     with torch.no_grad():
         progress_bar = tqdm(enumerate(test_loader), desc="Testing", total=len(test_loader))
-        for idx, (data, target, id) in progress_bar:
+        for idx, res in progress_bar:
+            data, target, target2, id = None, None, None, None
+            if len(res) == 3:
+                data, target, id = res
+            else:
+                data, target, target2, id = res
+                target2 = target2.to(device, dtype=torch.int64)
             data, target = data.to(device), target.to(device, dtype=torch.int64)
             shape = list(data.shape)[2:]
             padded = pad(data, padding_value)
@@ -60,21 +66,50 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
             input = padded.float()
 
             output = model(input)
-            output = unpad(output, shape)
+            if additional_heads>0:
+                output_m = unpad(output[0], shape)
+                loss = criterion(output_m, target)
+                predicted = torch.argmax(output_m.data, 1)
+                tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
+                                                       num_classes=classes,
+                                                       mode='multiclass', threshold=None)
+                for metric, stats in zip(metrics, metric_stats):
+                    acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
+                                              reduction=metric_reduction.value)
+                    stats.values.append(acc * 100)
+                for i in output[1]:
+                    output_h = unpad(i, shape)
+                    lossd = criterion(output_h, target2)
+                    loss += lossd
+                    predicted = torch.argmax(output_h.data, 1)
+                    tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
+                                                           num_classes=classes,
+                                                           mode='multiclass', threshold=None)
+                    for metric, stats in zip(metrics, metric_stats):
+                        acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
+                                                  reduction=metric_reduction.value)
+                        stats.values.append(acc * 100)
+                loss = loss / (len(output[1]) + 1)
+                test_loss += loss
+            else:
+                output = unpad(output, shape)
+                test_loss += criterion(output, target)
+                predicted = torch.argmax(output.data, 1)
+
+                tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
+                                                       num_classes=classes,
+                                                       mode='multiclass', threshold=None)
+                for metric, stats in zip(metrics, metric_stats):
+                    acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
+                                              reduction=metric_reduction.value)
+                    stats.values.append(acc * 100)
+
             # if batch_idx % 250 == 0:
             if debug_color_map: debug_img(output, target, data, debug_color_map)
-            test_loss += criterion(output, target)
-            # _, predicted = torch.max(output.data, 1)
-            predicted = torch.argmax(output.data, 1)
 
-            tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
-                                                   num_classes=classes,
-                                                   mode='multiclass', threshold=None)
 
-            for metric, stats in zip(metrics, metric_stats):
-                acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
-                                          reduction=metric_reduction.value)
-                stats.values.append(acc * 100)
+
+
 
             metric_string = " ".join(f"{i.name}: {i.value():.2f}%" for i in metric_stats)
 
@@ -339,7 +374,7 @@ class NetworkTrainer(object):
                                       metric_watcher_index=self.train_settings.watcher_metric_index,
                                       classes=self.train_settings.classes,
                                       class_weights=self.train_settings.class_weights,
-                                      metric_reduction=self.train_settings.metric_reduction)
+                                      metric_reduction=self.train_settings.metric_reduction, additional_heads=self.train_settings.additional_heads)
                 # debug_color_map=self.debug_color_map)
 
                 for cb in self.callbacks:
