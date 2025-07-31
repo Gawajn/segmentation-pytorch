@@ -129,7 +129,7 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
 
 class NetworkBase:
     @abc.abstractmethod
-    def predict(self, data: torch.Tensor, tta_aug: ttach.Compose = None) -> np.ndarray:
+    def predict(self, data: torch.Tensor, tta_aug: ttach.Compose = None, output_size=1) -> np.ndarray:
         pass
 
 
@@ -154,18 +154,19 @@ class Network(NetworkBase):
         self.proc_settings = proc_settings
         self.model = model
         self.device = device
-
         self.model.to(self.device)
 
-    def predict(self, data: torch.Tensor, tta_aug: ttach.Compose = None):
+    def predict(self, data: torch.Tensor, tta_aug: ttach.Compose = None, output_size=1):
         self.model.eval()
+
 
         with torch.no_grad():
             data = data.to(self.device)
             output = None
             o_shape = data.shape
             if tta_aug:
-                outputs = []
+                #outputs = []
+                all_outputs = [[] for _ in range(output_size)]
                 for transformer in tta_aug:
                     augmented_image = transformer.augment_image(data)
                     shape = list(augmented_image.shape)[2:]
@@ -177,21 +178,54 @@ class Network(NetworkBase):
                     reversed = transformer.deaugment_mask(output)
                     reversed = torch.nn.functional.interpolate(reversed, size=list(o_shape)[2:], mode="nearest")
                     # loguru.logger.info("original: {} input: {}, padded: {} unpadded {} output {}".format(str(o_shape), str(shape),str(list(augmented_image.shape)),str(list(output.shape)),str(list(reversed.shape))))
-                    outputs.append(reversed)
-                    stacked = torch.stack(outputs)
-                    output = torch.mean(stacked, dim=0)
+
+                    # Prüfen ob einzelner Tensor oder Tuple/Liste von Tensoren
+                    if not isinstance(model_outputs, (tuple, list)):
+                        model_outputs = [model_outputs]
+                    all_outputs = [[] for _ in range(len(model_outputs))]  # Liste für jede Ausgabe
+                    # Jede Ausgabe verarbeiten
+                    processed_outputs = []
+                    for i, output in enumerate(model_outputs):
+                        output = unpad(output, shape)
+                        reversed = transformer.deaugment_mask(output)
+                        reversed = torch.nn.functional.interpolate(reversed, size=list(o_shape)[2:], mode="nearest")
+                        processed_outputs.append(reversed)
+                        all_outputs[i].append(reversed)
+
+                # Mittelwert über alle TTA-Augmentationen für jede Ausgabe
+                outputs = []
+                for output_list in all_outputs:
+                    stacked = torch.stack(output_list)
+                    mean_output = torch.mean(stacked, dim=0)
+                    outputs.append(mean_output)
             else:
                 shape = list(data.shape)[2:]
                 padded = pad(data, self.proc_settings.input_padding_value)  ## 2**5
 
                 input = padded.float()
-                output = self.model(input)
-                output = unpad(output, shape)
+                model_outputs = self.model(input)
 
-            out = output.data.cpu().numpy()
-            out = np.transpose(out, (0, 2, 3, 1))
-            out = np.squeeze(out)
-            return out
+                # Prüfen ob einzelner Tensor oder Tuple/Liste von Tensoren
+                if not isinstance(model_outputs, (tuple, list)):
+                    model_outputs = [model_outputs]
+
+                # Jede Ausgabe verarbeiten
+                outputs = []
+                for output in model_outputs:
+                    output = unpad(output, shape)
+                    outputs.append(output)
+
+            final_outputs = []
+            for output in outputs:
+                out = output.data.cpu().numpy()
+                out = np.transpose(out, (0, 2, 3, 1))
+                out = np.squeeze(out)
+                final_outputs.append(out)
+            # Wenn nur eine Ausgabe, direkt zurückgeben (Rückwärtskompatibilität)
+            if len(final_outputs) == 1:
+                return final_outputs[0]
+            else:
+                return final_outputs
 
 
 class TrainMetrics:
@@ -388,6 +422,8 @@ class PredictionResult:
     network_input: np.ndarray
     probability_map: np.ndarray
     other: Optional[Any] = None
+    other_probability_map: Optional[List[np.ndarray]] = None
+
 
 
 class NetworkPredictorBase(abc.ABC):
@@ -403,13 +439,14 @@ class NetworkPredictor(NetworkPredictorBase):
 
     @classmethod
     def from_model_config(cls, network: NetworkBase, mc: ModelConfiguration, tta_aug: ttach.Compose = None):
-        return cls(network=network, processing_settings=mc.preprocessing_settings, tta_aug=tta_aug)
+        return cls(network=network, processing_settings=mc.preprocessing_settings, tta_aug=tta_aug, output_size= mc.network_settings.add_number_of_heads+1)
 
-    def __init__(self, network: NetworkBase, processing_settings: ProcessingSettings, tta_aug: ttach.Compose = None):
+    def __init__(self, network: NetworkBase, processing_settings: ProcessingSettings, tta_aug: ttach.Compose = None, output_size=1):
         self.network = network
         self.proc_settings = processing_settings
         self.tta_aug = tta_aug
         self.transforms = PreprocessingTransforms.from_dict(processing_settings.transforms)
+        self.output_size = output_size
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         if self.proc_settings.scale_predict:
@@ -420,11 +457,14 @@ class NetworkPredictor(NetworkPredictorBase):
         input_img = self.transforms.transform_predict(scaled_image.array())["image"]
 
         input_img = input_img.unsqueeze(0)
-
-        prediction = self.network.predict(input_img, tta_aug=self.tta_aug)
+        other = None
+        prediction = self.network.predict(input_img, tta_aug=self.tta_aug, output_size=self.output_size)
+        if isinstance(prediction, (tuple, list)):
+            other = prediction[1:] if len(prediction) > 1 else None
+            prediction = prediction[0]
 
         return PredictionResult(source_image=img, preprocessed_image=scaled_image, network_input=input_img,
-                                probability_map=prediction)
+                                probability_map=prediction, other_probability_map=other)
 
 
 class EnsemblePredictor(NetworkPredictorBase):
@@ -432,19 +472,21 @@ class EnsemblePredictor(NetworkPredictorBase):
     @classmethod
     def from_model_config(cls, networks: List[NetworkBase], mcs: List[ModelConfiguration],
                           tta_aug: ttach.Compose = None):
-        return cls(networks=networks, processing_settings=[mc.preprocessing_settings for mc in mcs], tta_aug=tta_aug)
+        return cls(networks=networks, processing_settings=[mc.preprocessing_settings for mc in mcs], tta_aug=tta_aug,
+                   output_sizes=[mc.network_settings.add_number_of_heads + 1 for mc in mcs])
 
     def __init__(self, networks: List[NetworkBase], processing_settings: List[ProcessingSettings],
-                 tta_aug: ttach.Compose = None):
+                 tta_aug: ttach.Compose = None, output_sizes=List[int]):
         self.networks = networks
         self.proc_settings = processing_settings
         self.tta_aug = tta_aug
         self.transforms = [PreprocessingTransforms.from_dict(tr.transforms) for tr in processing_settings]
+        self.output_sizes = output_sizes
 
     def predict_image(self, img: SourceImage) -> PredictionResult:
         single_network_prediction_result: List[PredictionResult] = []
 
-        for network, config, transforms in zip(self.networks, self.proc_settings, self.transforms):
+        for network, config, transforms, output_size in zip(self.networks, self.proc_settings, self.transforms, self.output_sizes):
             if config.scale_predict:
                 scaled_image = img.scale_area(config.scale_max_area)
             else:
@@ -453,21 +495,32 @@ class EnsemblePredictor(NetworkPredictorBase):
 
             input_img = input_img.unsqueeze(0)
 
-            prediction = network.predict(input_img, self.tta_aug)
+            prediction = network.predict(input_img, self.tta_aug, output_size=output_size)
+            other = None
+            if isinstance(prediction, (tuple, list)):
+                other = prediction[1:] if len(prediction) > 1 else None
+                prediction = prediction[0]
             single_network_prediction_result.append(PredictionResult(
                 source_image=img,
                 preprocessed_image=scaled_image,
                 network_input=input_img,
                 probability_map=prediction,
-                other=single_network_prediction_result))
+                other=single_network_prediction_result,
+                other_probability_map=other
+            ))
 
         res = np.stack([i.probability_map for i in single_network_prediction_result], axis=0)
         prediction = np.mean(res, axis=0)
+        other_prediction = []
+        for i in len(single_network_prediction_result[0].other_probability_map):
+            other_prediction.append(np.mean(np.stack([j.other_probability_map[i] for j in single_network_prediction_result], axis=0), axis=0))
+
         return PredictionResult(source_image=img,
                                 preprocessed_image=single_network_prediction_result[0].preprocessed_image,
                                 network_input=single_network_prediction_result[0].network_input,
                                 probability_map=prediction,
-                                other=single_network_prediction_result)  # TODO: Bugfix: preprocessed image must not necessarily be equal
+                                other=single_network_prediction_result,
+                                other_probability_map=other_prediction)  # TODO: Bugfix: preprocessed image must not necessarily be equal
 
 
 class NewImageReconstructor:
