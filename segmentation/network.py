@@ -159,73 +159,120 @@ class Network(NetworkBase):
     def predict(self, data: torch.Tensor, tta_aug: ttach.Compose = None, output_size=1):
         self.model.eval()
 
-
         with torch.no_grad():
             data = data.to(self.device)
-            output = None
+            outputs = None
             o_shape = data.shape
+
             if tta_aug:
-                #outputs = []
-                all_outputs = [[] for _ in range(output_size)]
+                # Listen für Hauptausgabe und zusätzliche Ausgaben
+                main_outputs = []
+                additional_outputs_list = []
+
                 for transformer in tta_aug:
                     augmented_image = transformer.augment_image(data)
                     shape = list(augmented_image.shape)[2:]
                     padded = pad(augmented_image, self.proc_settings.input_padding_value)  ## 2**5
 
                     input = padded.float()
-                    output = self.model(input)
-                    output = unpad(output, shape)
-                    reversed = transformer.deaugment_mask(output)
-                    reversed = torch.nn.functional.interpolate(reversed, size=list(o_shape)[2:], mode="nearest")
-                    # loguru.logger.info("original: {} input: {}, padded: {} unpadded {} output {}".format(str(o_shape), str(shape),str(list(augmented_image.shape)),str(list(output.shape)),str(list(reversed.shape))))
+                    model_output = self.model(input)
 
-                    # Prüfen ob einzelner Tensor oder Tuple/Liste von Tensoren
-                    if not isinstance(model_outputs, (tuple, list)):
-                        model_outputs = [model_outputs]
-                    all_outputs = [[] for _ in range(len(model_outputs))]  # Liste für jede Ausgabe
-                    # Jede Ausgabe verarbeiten
-                    processed_outputs = []
-                    for i, output in enumerate(model_outputs):
-                        output = unpad(output, shape)
-                        reversed = transformer.deaugment_mask(output)
-                        reversed = torch.nn.functional.interpolate(reversed, size=list(o_shape)[2:], mode="nearest")
-                        processed_outputs.append(reversed)
-                        all_outputs[i].append(reversed)
+                    # Prüfen ob Tuple (main, [additional]) oder einzelner Tensor
+                    if isinstance(model_output, tuple):
+                        main_tensor, additional_tensors = model_output
 
-                # Mittelwert über alle TTA-Augmentationen für jede Ausgabe
-                outputs = []
-                for output_list in all_outputs:
-                    stacked = torch.stack(output_list)
-                    mean_output = torch.mean(stacked, dim=0)
-                    outputs.append(mean_output)
+                        # Hauptausgabe verarbeiten
+                        main_tensor = unpad(main_tensor, shape)
+                        main_reversed = transformer.deaugment_mask(main_tensor)
+                        main_reversed = torch.nn.functional.interpolate(main_reversed, size=list(o_shape)[2:],
+                                                                        mode="nearest")
+                        main_outputs.append(main_reversed)
+
+                        # Zusätzliche Ausgaben verarbeiten
+                        additional_processed = []
+                        for additional_tensor in additional_tensors:
+                            additional_tensor = unpad(additional_tensor, shape)
+                            additional_reversed = transformer.deaugment_mask(additional_tensor)
+                            additional_reversed = torch.nn.functional.interpolate(additional_reversed,
+                                                                                  size=list(o_shape)[2:],
+                                                                                  mode="nearest")
+                            additional_processed.append(additional_reversed)
+                        additional_outputs_list.append(additional_processed)
+
+                    else:
+                        # Einzelner Tensor (nur Hauptausgabe)
+                        main_tensor = unpad(model_output, shape)
+                        main_reversed = transformer.deaugment_mask(main_tensor)
+                        main_reversed = torch.nn.functional.interpolate(main_reversed, size=list(o_shape)[2:],
+                                                                        mode="nearest")
+                        main_outputs.append(main_reversed)
+
+                # Mittelwert über alle TTA-Augmentationen
+                main_stacked = torch.stack(main_outputs)
+                main_mean = torch.mean(main_stacked, dim=0)
+
+                if additional_outputs_list:
+                    # Mittelwerte für zusätzliche Ausgaben berechnen
+                    num_additional = len(additional_outputs_list[0])
+                    additional_means = []
+                    for i in range(num_additional):
+                        additional_stack = torch.stack([aug_outputs[i] for aug_outputs in additional_outputs_list])
+                        additional_mean = torch.mean(additional_stack, dim=0)
+                        additional_means.append(additional_mean)
+                    outputs = (main_mean, additional_means)
+                else:
+                    outputs = main_mean
+
             else:
                 shape = list(data.shape)[2:]
                 padded = pad(data, self.proc_settings.input_padding_value)  ## 2**5
 
                 input = padded.float()
-                model_outputs = self.model(input)
+                model_output = self.model(input)
 
-                # Prüfen ob einzelner Tensor oder Tuple/Liste von Tensoren
-                if not isinstance(model_outputs, (tuple, list)):
-                    model_outputs = [model_outputs]
+                # Prüfen ob Tuple (main, [additional]) oder einzelner Tensor
+                if isinstance(model_output, tuple):
+                    main_tensor, additional_tensors = model_output
 
-                # Jede Ausgabe verarbeiten
-                outputs = []
-                for output in model_outputs:
-                    output = unpad(output, shape)
-                    outputs.append(output)
+                    # Hauptausgabe verarbeiten
+                    main_tensor = unpad(main_tensor, shape)
 
-            final_outputs = []
-            for output in outputs:
-                out = output.data.cpu().numpy()
+                    # Zusätzliche Ausgaben verarbeiten
+                    additional_processed = []
+                    for additional_tensor in additional_tensors:
+                        additional_tensor = unpad(additional_tensor, shape)
+                        additional_processed.append(additional_tensor)
+
+                    outputs = (main_tensor, additional_processed)
+                else:
+                    # Einzelner Tensor
+                    outputs = unpad(model_output, shape)
+
+            # Post-processing
+            if isinstance(outputs, tuple):
+                # Multi-Output: (main, [additional])
+                main_output, additional_outputs = outputs
+
+                # Hauptausgabe post-processen
+                main_out = main_output.data.cpu().numpy()
+                main_out = np.transpose(main_out, (0, 2, 3, 1))
+                main_out = np.squeeze(main_out)
+
+                # Zusätzliche Ausgaben post-processen
+                additional_outs = []
+                for additional_output in additional_outputs:
+                    additional_out = additional_output.data.cpu().numpy()
+                    additional_out = np.transpose(additional_out, (0, 2, 3, 1))
+                    additional_out = np.squeeze(additional_out)
+                    additional_outs.append(additional_out)
+
+                return (main_out, additional_outs)
+            else:
+                # Single-Output
+                out = outputs.data.cpu().numpy()
                 out = np.transpose(out, (0, 2, 3, 1))
                 out = np.squeeze(out)
-                final_outputs.append(out)
-            # Wenn nur eine Ausgabe, direkt zurückgeben (Rückwärtskompatibilität)
-            if len(final_outputs) == 1:
-                return final_outputs[0]
-            else:
-                return final_outputs
+                return out
 
 
 class TrainMetrics:
