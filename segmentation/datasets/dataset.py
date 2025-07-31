@@ -171,9 +171,15 @@ class MemoryDataset(Dataset):
         if image.dtype == bool:
             image = image.astype("uint8") * 255
 
-        transformed = self.transforms.transform_train(image, mask)
+        if mask_id2 is not None:
+            transformed = self.transforms.transform_train(image, mask, mask2=mask_id2)
+            # show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
 
-        return transformed["image"], transformed["mask"], torch.tensor(item)
+            return transformed["image"], transformed["mask"], transformed["add_symbols_mask"], torch.tensor(item)
+
+        else:
+            transformed = self.transforms.transform_train(image, mask)
+            return transformed["image"], transformed["mask"],  torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
@@ -195,7 +201,6 @@ class XMLDataset(Dataset):
         rescale_factor = get_rescale_factor(image, scale_area=self.scale_area)
 
         mask = self.mask_generator.get_mask(mask_id, rescale_factor)
-        mask2 = self.mask_generator.get_mask(mask_id2, rescale_factor)
 
         image = np.array(rescale_pil(image, rescale_factor, 1))
         #from  matplotlib import pyplot as plt
@@ -205,10 +210,19 @@ class XMLDataset(Dataset):
         #plt.show()
         if image.dtype == bool:
             image = image.astype("uint8") * 255
+        if mask_id2 is not None:
+            mask2 = self.mask_generator.get_mask(mask_id2, rescale_factor)
+            transformed = self.transforms.transform_train(image, mask, mask2=mask2)
+            # show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
 
-        transformed = self.transforms.transform_train(image, mask, mask2=mask2)  # TODO: switch between modes based on parameter
-        #show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
-        return transformed["image"], transformed["mask"], transformed["add_symbols_mask"], torch.tensor(item)
+            return transformed["image"], transformed["mask"], transformed["add_symbols_mask"], torch.tensor(item)
+
+        else:
+            transformed = self.transforms.transform_train(image, mask)
+            return transformed["image"], transformed["mask"],  torch.tensor(item)
+
+        # TODO: switch between modes based on parameter
+
 
     def __len__(self):
         return len(self.index)
