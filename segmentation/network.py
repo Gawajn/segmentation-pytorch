@@ -476,7 +476,9 @@ class EnsemblePredictor(NetworkPredictorBase):
                    output_sizes=[mc.network_settings.add_number_of_heads + 1 for mc in mcs])
 
     def __init__(self, networks: List[NetworkBase], processing_settings: List[ProcessingSettings],
-                 tta_aug: ttach.Compose = None, output_sizes=List[int]):
+                 tta_aug: ttach.Compose = None, output_sizes: List[int]=None):
+        if output_sizes is None:
+            output_sizes = [1]
         self.networks = networks
         self.proc_settings = processing_settings
         self.tta_aug = tta_aug
@@ -512,7 +514,7 @@ class EnsemblePredictor(NetworkPredictorBase):
         res = np.stack([i.probability_map for i in single_network_prediction_result], axis=0)
         prediction = np.mean(res, axis=0)
         other_prediction = []
-        for i in len(single_network_prediction_result[0].other_probability_map):
+        for i in range(len(single_network_prediction_result[0].other_probability_map)):
             other_prediction.append(np.mean(np.stack([j.other_probability_map[i] for j in single_network_prediction_result], axis=0), axis=0))
 
         return PredictionResult(source_image=img,
