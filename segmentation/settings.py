@@ -90,7 +90,7 @@ class PredefinedNetworkSettings(DataClassJSONMixin):
     decoder_channel: Tuple[int, ...] = (256, 128, 64, 32, 16)
     use_batch_norm_layer: bool = False
 
-    add_number_of_heads: int = 1
+    add_number_of_heads: int = 0
     add_classes: List[int] = field(default_factory=list)
 
 @dataclass
