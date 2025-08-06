@@ -561,8 +561,9 @@ class EnsemblePredictor(NetworkPredictorBase):
         res = np.stack([i.probability_map for i in single_network_prediction_result], axis=0)
         prediction = np.mean(res, axis=0)
         other_prediction = []
-        for i in range(len(single_network_prediction_result[0].other_probability_map)):
-            other_prediction.append(np.mean(np.stack([j.other_probability_map[i] for j in single_network_prediction_result], axis=0), axis=0))
+        if single_network_prediction_result[0].other_probability_map is not None:
+            for i in range(len(single_network_prediction_result[0].other_probability_map)):
+                other_prediction.append(np.mean(np.stack([j.other_probability_map[i] for j in single_network_prediction_result], axis=0), axis=0))
 
         return PredictionResult(source_image=img,
                                 preprocessed_image=single_network_prediction_result[0].preprocessed_image,
