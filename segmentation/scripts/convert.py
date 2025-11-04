@@ -1,6 +1,5 @@
 import argparse
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Tuple, List
 
@@ -14,6 +13,7 @@ from segmentation.preprocessing.workflow import PreprocessingTransforms, ColorMa
     NetworkEncoderTransform
 from segmentation.settings import ModelFile, ModelConfiguration, ProcessingSettings, CustomModelSettings, \
     Preprocessingfunction, PredefinedNetworkSettings, ColorMap, ClassSpec
+import sys
 
 
 @dataclass
@@ -132,13 +132,14 @@ class HistoricalTrainSettings(DataClassJSONMixin):
                                          self.DECODER_CHANNELS)
 
 
+def check_args(args):
+    if bool(args.color_map is not None) == bool(args.use_predefined_baseline_color_map is not None):
+        raise RuntimeError("Must provide either --color_map or --use_predefined_baseline_color_map")
+
 def main():
-    from segmentation.network import Network
-    from segmentation.settings import Architecture
-    from segmentation.modules import ENCODERS
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json", type=str, default=None,
+    parser.add_argument("--json", type=str, default=None, required=True,
                         help="load a json in the old file format and parse it")
     parser.add_argument("--color_map", type=str, required=False,
                         help="path to color map to load")
@@ -148,9 +149,12 @@ def main():
 
     args = parser.parse_args()
 
+    check_args(args)
+
     with open(args.json) as f:
-        print(json.loads(f.read()))
-        settings = HistoricalTrainSettings.from_json(f.read())
+        loaded_json_str = f.read()
+        print(json.loads(loaded_json_str),file=sys.stderr)
+        settings = HistoricalTrainSettings.from_json(loaded_json_str)
 
     color_map = None
     if args.color_map:
