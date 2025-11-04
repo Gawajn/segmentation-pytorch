@@ -213,7 +213,8 @@ class AttentionUnet(nn.Module):
             self.m1 = UNet(in_channels=in_channels, out_channels=out_channels, n_class=n_class,
                            kernel_size=kernel_size, padding=padding, stride=stride, depth=encoder_depth,
                            encoder_filter=encoder_filter, decoder_filter=decoder_filter)
-            self.out = nn.Conv2d(out_channels, n_class, kernel_size, padding, stride)
+            if attention or scaled_images_input:
+                self.out = nn.Conv2d(out_channels, n_class, kernel_size, padding, stride)
 
 
     def forward(self, x):
@@ -284,12 +285,7 @@ class AttentionUnet(nn.Module):
             x_out = self.out(x_out)
         else:
             x_out = self.m1(x)
-            x_out = self.out(x_out)
         return x_out
-
-
-
-
 
 
 def test():
