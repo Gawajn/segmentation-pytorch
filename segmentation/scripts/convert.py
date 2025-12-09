@@ -106,14 +106,15 @@ class HistoricalTrainSettings(DataClassJSONMixin):
             return result
 
         input_transforms = albumentations.Compose(remove_nones([
-            GrayToRGBTransform() if rgb else None,
-            ColorMapTransform(color_map=color_map.to_albumentation_color_map())
+            GrayToRGBTransform(p=1.0) if rgb else None,
+            ColorMapTransform(p=1.0,color_map=color_map.to_albumentation_color_map())
 
         ]))
         aug_transforms = default_transform()
         tta_transforms = None
         post_transforms = albumentations.Compose(remove_nones([
-            NetworkEncoderTransform(self.ENCODER if not self.CUSTOM_MODEL else Preprocessingfunction.name),
+            # in old version there was a bug always using efficientnet-b3 for custom model as the encoder
+            NetworkEncoderTransform(self.ENCODER if not self.CUSTOM_MODEL else "efficientnet-b3"),
             ToTensorV2()
         ]))
         transforms = PreprocessingTransforms(
