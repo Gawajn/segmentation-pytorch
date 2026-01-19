@@ -145,7 +145,6 @@ class MaskDataset(Dataset):
             image = image.astype("uint8") * 255
 
         transformed = self.transforms.transform_train(image, mask)
-
         return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):

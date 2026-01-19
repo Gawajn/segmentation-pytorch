@@ -373,13 +373,13 @@ class NetworkTrainer(object):
                 data, target, target2, id = res
                 target2 = target2.to(device, dtype=torch.int64)
             data, target = data.to(device), target.to(device, dtype=torch.int64)
-
             shape = list(data.shape)[2:]
             padded = pad(data, self.network.proc_settings.input_padding_value)
 
             input = padded.float()
 
             output = model(input)
+
             loss = 0
             if self.train_settings.additional_heads>0:
                 output_m = unpad(output[0], shape)

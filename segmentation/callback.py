@@ -39,7 +39,7 @@ class ModelWriterCallback(TrainCallback):
         with open(path.with_suffix(".json"), "w") as f:
             f.write(json.dumps(ModelFile(
                 self.model_config,
-                self.stats.to_dict()).to_dict(), indent=4))  # TODO: write json
+                self.stats.to_dict()).to_dict(), indent=4))
 
     def on_val_epoch_end(self, epoch, acc, loss):
         if self.save_all:

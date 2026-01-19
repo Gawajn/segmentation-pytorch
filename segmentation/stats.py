@@ -25,7 +25,7 @@ class EpochStats:
         return len(self.stats)
 
     def to_dict(self ) -> dict:
-        return {i.name: i.value() for i in self.stats}
+        return {i.name: float(i.value()) for i in self.stats}
 
     def __getitem__(self, item):
         return self.stats[item]

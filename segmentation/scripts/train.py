@@ -239,16 +239,16 @@ def build_model_from_args(args, color_map: ColorMap) -> Tuple[Network, ModelConf
         return result
 
     input_transforms = albumentations.Compose(remove_nones([
-        GrayToRGBTransform() if True else None,
-        ColorMapTransform(color_map=color_map.to_albumentation_color_map())
+        GrayToRGBTransform(p=1.0) if True else None,
+        ColorMapTransform(p=1.0, color_map=color_map.to_albumentation_color_map())
 
     ]))
     aug_transforms = default_transform()
     tta_transforms = None
     post_transforms = albumentations.Compose(remove_nones([
         NetworkEncoderTransform(
-            args.predefined_encoder if not args.custom_model else Preprocessingfunction.name),
-        ToTensorV2()
+            args.predefined_encoder if not args.custom_model else Preprocessingfunction.name, p=1.0),
+        ToTensorV2(p=1.0)
     ]))
     transforms = PreprocessingTransforms(
         input_transform=input_transforms,
@@ -316,7 +316,7 @@ def train_arg(train, test, args, network: Network, config: ModelConfiguration, m
                                                            watcher_metric_index=args.metrics_watcher_index,
                                                            class_weights=args.metrics_weights,
                                                            loss=Losses(args.loss),
-                                                           add_classes=config.add_classes
+                                                           #additional_classes=config. #TODO: how to fix this?
                                                            ), args.device,
                              callbacks=callbacks, debug_color_map=config.color_map)
 
