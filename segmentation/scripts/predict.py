@@ -80,6 +80,7 @@ def main():
     parser.add_argument("--tta", action="store_true", help="Use predefined Tta-pipeline")
     parser.add_argument("--dewarp", action="store_true", help="Dewarp image using the detected baselines")
     parser.add_argument("--show_result", action="store_true")
+    parser.add_argument("--overlay_mask", action="store_true", help="In mask mode, overlay the mask with 50% alpha over GT")
     parser.add_argument("--output_path_debug_images", type=str, default=None, help="Directory of the debug images")
 
     parser.add_argument("--processes", type=int, default=8)
@@ -104,11 +105,19 @@ def main():
             simg = SourceImage.load(img_path)
             mask = nmaskpred.predict_image(simg)
             if args.show_result:
-                mask.generated_mask.show()
+                if args.overlay_mask:
+                    blended = Image.blend(simg.pil_image,mask.generated_mask,0.5)
+                    blended.show()
+                else:
+                    mask.generated_mask.show()
             if args.output_path_debug_images:
                 basename = "debug_" + os.path.basename(img_path)
                 file_path = os.path.join(args.output_path_debug_images, basename)
-                mask.generated_mask.save(file_path)
+                if args.overlay_mask:
+                    blended = Image.blend(simg.pil_image,mask.generated_mask,0.5)
+                    blended.save(file_path) 
+                else:
+                    mask.generated_mask.save(file_path)
 
     if args.mode == "xml_baseline":
         nbaselinepred = NetworkBaselinePostProcessor(predictor, config.color_map)
