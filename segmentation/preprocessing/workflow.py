@@ -8,7 +8,28 @@ import numpy as np
 
 from segmentation.binarization.doxapy_bin import binarize, BinarizationAlgorithm
 
+def sanitize_albumentations_config(config):
+    """
+    Recursively removes 'always_apply' and forces p=1.0 if it was True.
+    """
+    if isinstance(config, dict):
+        # 1. Logic: If always_apply is True, force probability to 1.0
+        if config.get("always_apply") is True:
+            config["p"] = 1.0
 
+        # 2. Cleanup: Remove the forbidden key
+        config.pop("always_apply", None)
+
+        # 3. Recurse: Check all children (e.g., inside "transforms" or "params")
+        for key, value in config.items():
+            sanitize_albumentations_config(value)
+
+    elif isinstance(config, list):
+        # Recurse through lists (like the list of transforms in Compose)
+        for item in config:
+            sanitize_albumentations_config(item)
+
+    return config
 @dataclass
 class PreprocessingTransforms:
     input_transform: Optional[albu.Compose] = None
@@ -47,6 +68,15 @@ class PreprocessingTransforms:
 
     @staticmethod
     def from_dict(d: Dict, lambda_transforms: Dict[str, Callable] = None) -> 'PreprocessingTransforms':
+        transform_keys = ["input_transform", "aug_transform", "tta_transform", "post_transforms"]
+
+        # 2. Loop through and sanitize them if they exist
+        for key in transform_keys:
+            if d.get(key) is not None:
+                # This modifies d[key] in-place, removing 'always_apply' and fixing 'p'
+                sanitize_albumentations_config(d[key])
+
+        # 3. Now it is safe to load them
         return PreprocessingTransforms(
             input_transform=albumentations.from_dict(d["input_transform"]) if d[
                                                                                   "input_transform"] is not None else None,
@@ -56,6 +86,7 @@ class PreprocessingTransforms:
                                                                                   "post_transforms"] is not None else None,
             lambda_transforms=lambda_transforms
         )
+
 
     def get_train_transforms(self):
         return PreprocessingTransforms(
