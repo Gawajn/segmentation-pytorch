@@ -316,7 +316,7 @@ def train_arg(train, test, args, network: Network, config: ModelConfiguration, m
                                                            watcher_metric_index=args.metrics_watcher_index,
                                                            class_weights=args.metrics_weights,
                                                            loss=Losses(args.loss),
-                                                           #additional_classes=config. #TODO: how to fix this?
+                                                           #additional_classes=config.add_classes #TODO: how to fix this?
                                                            ), args.device,
                              callbacks=callbacks, debug_color_map=config.color_map)
 

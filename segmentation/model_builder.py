@@ -40,7 +40,7 @@ class ModelBuilderPredefined(ModelBuilderBase):
 
         model_params['encoder_name'] = self.settings.encoder
 
-        if 'decoder_use_batchnorm' in model_params and self.settings.use_batch_norm_layer is False:
+        if not self.settings.use_batch_norm_layer:
             model_params['decoder_use_batchnorm'] = False
 
         if 'decoder_channels' in model_params:
