@@ -11,11 +11,13 @@ class MetricStats:
     values: List[float] = field(default_factory=lambda: [])
 
     def value(self):
-        return np.mean(self.values)
+        if not self.values:
+            return 0.0
+        return np.mean(self.values).item()
 
 
 @dataclass
-class EpochStats:
+class EpochStats(DataClassJSONMixin):
     stats: List[MetricStats]
 
     def __iter__(self):
