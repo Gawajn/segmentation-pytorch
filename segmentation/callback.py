@@ -34,20 +34,12 @@ class ModelWriterCallback(TrainCallback):
         # if -1 returned than epoch is skipped
         return 0
     def save(self, path: Path):
-        def itemize_tensors(obj):
-            if isinstance(obj, dict):
-                return {k: itemize_tensors(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [itemize_tensors(x) for x in obj]
-            elif isinstance(obj, torch.Tensor):
-                return obj.item()  # Converts tensor(95.1151) to 95.1151
-            return obj
         torch.save(self.network.model.state_dict(), path.with_suffix(".torch"))
         loguru.logger.info(f'Saving model to {path.with_suffix(".torch")}')
         with open(path.with_suffix(".json"), "w") as f:
             f.write(json.dumps(ModelFile(
                 self.model_config,
-                itemize_tensors(self.stats.to_dict())).to_dict(), indent=4))
+                self.stats.to_flat_dict()).to_dict(), indent=4))
 
     def on_val_epoch_end(self, epoch, acc, loss):
         if self.save_all:
