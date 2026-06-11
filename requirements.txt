@@ -18,7 +18,6 @@ lxml
 shapely
 future
 scikit-learn
-dataclasses
 scikit-learn
 scipy
 loguru

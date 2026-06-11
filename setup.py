@@ -6,6 +6,7 @@ with open("README.md", "r") as fh:
 setup(
     name='pixel_classifier_torch',
     version='0.2.2.3',
+    python_requires='>=3.8',
     packages=find_packages(),
     long_description=long_description,
 
