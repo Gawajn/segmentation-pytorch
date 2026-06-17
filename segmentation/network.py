@@ -84,7 +84,7 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
                     predicted = torch.argmax(output_h.data, 1)
                     tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
                                                            num_classes=classes,
-                                                           mode='multiclass', threshold=None)
+                                                           mode='multiclass', threshold=None, ignore_index=0)
                     for metric, stats in zip(metrics, metric_stats):
                         acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
                                                   reduction=metric_reduction.value)

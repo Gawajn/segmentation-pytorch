@@ -86,7 +86,10 @@ class EarlyStoppingCallback(TrainCallback):
             return -1
         else:
             return 0
-
+    def on_batch_end(self, batch, loss, acc, logs=None):
+        pass
+    def on_train_epoch_end(self, epoch, acc, loss):
+        pass
     def on_val_epoch_end(self, epoch, acc, loss):
         acc: EpochStats = acc
         if self.metric_watcher_index > 0:
