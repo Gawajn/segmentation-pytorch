@@ -96,9 +96,9 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
                 test_loss += criterion(output, target)
                 predicted = torch.argmax(output.data, 1)
 
-                tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
-                                                       num_classes=classes,
-                                                       mode='multiclass', threshold=None, ignore_index=0)
+                tp, fp, fn, tn = smp.metrics.get_stats(predicted - 1, target - 1,
+                                                       num_classes=classes - 1,
+                                                       mode='multiclass', threshold=None, ignore_index=-1)
                 for metric, stats in zip(metrics, metric_stats):
                     acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
                                               reduction=metric_reduction.value)
@@ -406,9 +406,9 @@ class NetworkTrainer(object):
 
             #if batch_idx % 1 == 0:
             #    debug_img(output, target, data, self.debug_color_map)
-            tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
-                                                   num_classes=self.train_settings.classes,
-                                                   mode='multiclass', threshold=None, ignore_index=0)
+            tp, fp, fn, tn = smp.metrics.get_stats(predicted - 1, target - 1,
+                                                   num_classes=self.train_settings.classes - 1,
+                                                   mode='multiclass', threshold=None, ignore_index=-1)
             for metric, stats in zip(self.train_settings.metrics, metric_stats):
                 acc = metric.get_metric()(tp, fp, fn, tn, class_weights=self.train_settings.class_weights,
                                           reduction=self.train_settings.metric_reduction.value)
