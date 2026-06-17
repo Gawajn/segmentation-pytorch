@@ -408,7 +408,7 @@ class NetworkTrainer(object):
             #    debug_img(output, target, data, self.debug_color_map)
             tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
                                                    num_classes=self.train_settings.classes,
-                                                   mode='multiclass', threshold=None)
+                                                   mode='multiclass', threshold=None, ignore_index=0)
             for metric, stats in zip(self.train_settings.metrics, metric_stats):
                 acc = metric.get_metric()(tp, fp, fn, tn, class_weights=self.train_settings.class_weights,
                                           reduction=self.train_settings.metric_reduction.value)
