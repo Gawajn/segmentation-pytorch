@@ -42,6 +42,26 @@ def unpad(tensor, o_shape):
     return output
 
 
+def unpack_batch(res, device):
+    """Unpacks a 3-tuple (data, target, id) or 4-tuple (data, target, additional_targets, id)
+    batch. additional_targets is a list with one entry per additional head; a zero-size tensor
+    marks a sample without a label for that head."""
+    additional_targets = []
+    if len(res) == 3:
+        data, target, id = res
+    else:
+        data, target, additional, id = res
+        additional_targets = list(additional) if isinstance(additional, (list, tuple)) else [additional]
+    data, target = data.to(device), target.to(device, dtype=torch.int64)
+    return data, target, additional_targets, id
+
+
+def split_model_output(output):
+    if isinstance(output, tuple):
+        return output[0], output[1]
+    return output, []
+
+
 def test(model, device, test_loader, criterion, classes, metrics: List[Metrics], metric_reduction,
          metric_watcher_index=0, class_weights=None, padding_value=32, debug_color_map=None, additional_heads=0):
     model.eval()
@@ -49,66 +69,54 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
     correct = 0
     total = 0
     metric_stats = EpochStats([MetricStats(name=i.name) for i in metrics])
+    head_metric_stats = {}
 
     with torch.no_grad():
         progress_bar = tqdm(enumerate(test_loader), desc="Testing", total=len(test_loader))
         for idx, res in progress_bar:
-            data, target, target2, id = None, None, None, None
-            if len(res) == 3:
-                data, target, id = res
-            else:
-                data, target, target2, id = res
-                target2 = target2.to(device, dtype=torch.int64)
-            data, target = data.to(device), target.to(device, dtype=torch.int64)
+            data, target, additional_targets, id = unpack_batch(res, device)
             shape = list(data.shape)[2:]
             padded = pad(data, padding_value)
 
             input = padded.float()
 
-            output = model(input)
-            if additional_heads>0:
-                output_m = unpad(output[0], shape)
-                loss = criterion(output_m, target)
-                predicted = torch.argmax(output_m.data, 1)
-                tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
-                                                       num_classes=classes,
-                                                       mode='multiclass', threshold=None)
-                for metric, stats in zip(metrics, metric_stats):
-                    acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
-                                              reduction=metric_reduction.value)
-                    stats.values.append(acc * 100)
-                for i in output[1]:
-                    output_h = unpad(i, shape)
-                    lossd = criterion(output_h, target2)
-                    loss += lossd
-                    predicted = torch.argmax(output_h.data, 1)
-                    tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
-                                                           num_classes=classes,
-                                                           mode='multiclass', threshold=None)
-                    for metric, stats in zip(metrics, metric_stats):
-                        acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
-                                                  reduction=metric_reduction.value)
-                        stats.values.append(acc * 100)
-                loss = loss / (len(output[1]) + 1)
-                test_loss += loss
-            else:
-                output = unpad(output, shape)
-                test_loss += criterion(output, target)
-                predicted = torch.argmax(output.data, 1)
+            output_m, head_outputs = split_model_output(model(input))
+            output_m = unpad(output_m, shape)
+            loss = criterion(output_m, target)
+            loss_terms = 1
+            predicted = torch.argmax(output_m.data, 1)
+            tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
+                                                   num_classes=classes,
+                                                   mode='multiclass', threshold=None)
+            for metric, stats in zip(metrics, metric_stats):
+                acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
+                                          reduction=metric_reduction.value)
+                stats.values.append(acc * 100)
 
-                tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
-                                                       num_classes=classes,
+            for i, head_output in enumerate(head_outputs):
+                head_target = additional_targets[i] if i < len(additional_targets) else None
+                if head_target is None or head_target.numel() == 0:
+                    continue  # no label for this head on this sample
+                head_target = head_target.to(device, dtype=torch.int64)
+                head_output = unpad(head_output, shape)
+                loss += criterion(head_output, head_target)
+                loss_terms += 1
+                head_predicted = torch.argmax(head_output.data, 1)
+                tp, fp, fn, tn = smp.metrics.get_stats(head_predicted, head_target,
+                                                       num_classes=head_output.shape[1],
                                                        mode='multiclass', threshold=None)
-                for metric, stats in zip(metrics, metric_stats):
-                    acc = metric.get_metric()(tp, fp, fn, tn, class_weights=class_weights,
+                if i not in head_metric_stats:
+                    head_metric_stats[i] = EpochStats([MetricStats(name=m.name) for m in metrics])
+                for metric, stats in zip(metrics, head_metric_stats[i]):
+                    acc = metric.get_metric()(tp, fp, fn, tn, class_weights=None,
                                               reduction=metric_reduction.value)
                     stats.values.append(acc * 100)
+
+            loss = loss / loss_terms
+            test_loss += loss
 
             # if batch_idx % 250 == 0:
-            if debug_color_map: debug_img(output, target, data, debug_color_map)
-
-
-
+            if debug_color_map: debug_img(output_m, target, data, debug_color_map)
 
 
             metric_string = " ".join(f"{i.name}: {i.value():.2f}%" for i in metric_stats)
@@ -121,6 +129,9 @@ def test(model, device, test_loader, criterion, classes, metrics: List[Metrics],
 
     loguru.logger.info(
         f'Test set: Average loss: {test_loss:.4f}, Length of Test Set: {len(test_loader.dataset)} {metric_string}')
+    for i in sorted(head_metric_stats.keys()):
+        head_metric_string = " ".join(f"{s.name}: {s.value():.2f}%" for s in head_metric_stats[i])
+        loguru.logger.info(f'Additional head {i}: {head_metric_string}')
     loguru.logger.info(
         f'Metric used for model saving: {metric_stats.stats[metric_watcher_index].name} {metric_stats.stats[metric_watcher_index].value():.2f}%')
 
@@ -341,11 +352,21 @@ class NetworkTrainer(object):
         self.debug_color_map = debug_color_map
 
         opt = settings.optimizer.getOptimizer()
+        from segmentation.multi_head_network import MultiHeadNetwork
         try:
-            optimizer1 = opt(self.network.model.encoder.parameters(), lr=self.train_settings.learningrate_encoder)
-            optimizer2 = opt(self.network.model.decoder.parameters(), lr=self.train_settings.learningrate_decoder)
-            optimizer3 = opt(self.network.model.segmentation_head.parameters(),
-                             lr=self.train_settings.learningrate_seghead)
+            model = self.network.model
+            if isinstance(model, MultiHeadNetwork):
+                head_parameters = list(model.model.segmentation_head.parameters())
+                for head in model.heads:
+                    head_parameters += list(head.parameters())
+                optimizer1 = opt(model.model.encoder.parameters(), lr=self.train_settings.learningrate_encoder)
+                optimizer2 = opt(model.model.decoder.parameters(), lr=self.train_settings.learningrate_decoder)
+                optimizer3 = opt(head_parameters, lr=self.train_settings.learningrate_seghead)
+            else:
+                optimizer1 = opt(model.encoder.parameters(), lr=self.train_settings.learningrate_encoder)
+                optimizer2 = opt(model.decoder.parameters(), lr=self.train_settings.learningrate_decoder)
+                optimizer3 = opt(model.segmentation_head.parameters(),
+                                 lr=self.train_settings.learningrate_seghead)
             optimizer = [optimizer1, optimizer2, optimizer3]
         except:
             optimizer = opt(self.network.model.parameters(), lr=self.train_settings.learningrate_seghead)
@@ -366,46 +387,34 @@ class NetworkTrainer(object):
 
         acc_loss = 0
         for batch_idx, res in progress_bar:
-            data, target, target2, id = None, None, None, None
-            if len(res) == 3:
-                data, target, id = res
-            else:
-                data, target, target2, id = res
-                target2 = target2.to(device, dtype=torch.int64)
-            data, target = data.to(device), target.to(device, dtype=torch.int64)
+            data, target, additional_targets, id = unpack_batch(res, device)
             shape = list(data.shape)[2:]
             padded = pad(data, self.network.proc_settings.input_padding_value)
 
             input = padded.float()
 
-            output = model(input)
-
-            loss = 0
-            if self.train_settings.additional_heads>0:
-                output_m = unpad(output[0], shape)
-                loss = self.criterion(output_m, target)
-                for i in output[1]:
-                    output_h = unpad(i, shape)
-                    lossd =  self.criterion(output_h, target2)
-                    loss += lossd
-                loss = loss / (len(output[1]) + 1)
-            else:
-                output = unpad(output, shape)
-                loss = self.criterion(output, target)
+            output_m, head_outputs = split_model_output(model(input))
+            output_m = unpad(output_m, shape)
+            loss = self.criterion(output_m, target)
+            loss_terms = 1
+            for i, head_output in enumerate(head_outputs):
+                head_target = additional_targets[i] if i < len(additional_targets) else None
+                if head_target is None or head_target.numel() == 0:
+                    continue  # no label for this head on this sample
+                head_target = head_target.to(device, dtype=torch.int64)
+                loss += self.criterion(unpad(head_output, shape), head_target)
+                loss_terms += 1
+            loss = loss / loss_terms
 
             loss = loss / self.train_settings.batch_accumulation
             acc_loss += loss.to(dtype=float)
             model.zero_grad()  # Reset gradients tensors
 
             loss.backward()
-            predicted = None
-            if self.train_settings.additional_heads>0:
-                predicted = torch.argmax(unpad(output[0].data, shape), 1)
-            else:
-                predicted = torch.argmax(unpad(output.data, shape), 1)
+            predicted = torch.argmax(output_m.data, 1)
 
             #if batch_idx % 1 == 0:
-            #    debug_img(output, target, data, self.debug_color_map)
+            #    debug_img(output_m, target, data, self.debug_color_map)
             tp, fp, fn, tn = smp.metrics.get_stats(predicted, target,
                                                    num_classes=self.train_settings.classes,
                                                    mode='multiclass', threshold=None)
@@ -486,7 +495,8 @@ class NetworkPredictor(NetworkPredictorBase):
 
     @classmethod
     def from_model_config(cls, network: NetworkBase, mc: ModelConfiguration, tta_aug: ttach.Compose = None):
-        return cls(network=network, processing_settings=mc.preprocessing_settings, tta_aug=tta_aug, output_size= mc.network_settings.add_number_of_heads+1)
+        return cls(network=network, processing_settings=mc.preprocessing_settings, tta_aug=tta_aug,
+                   output_size=mc.head_config()[0] + 1)
 
     def __init__(self, network: NetworkBase, processing_settings: ProcessingSettings, tta_aug: ttach.Compose = None, output_size=1):
         self.network = network
@@ -507,7 +517,7 @@ class NetworkPredictor(NetworkPredictorBase):
         other = None
         prediction = self.network.predict(input_img, tta_aug=self.tta_aug, output_size=self.output_size)
         if isinstance(prediction, (tuple, list)):
-            other = prediction[1:] if len(prediction) > 1 else None
+            other = list(prediction[1]) if len(prediction) > 1 else None
             prediction = prediction[0]
 
         return PredictionResult(source_image=img, preprocessed_image=scaled_image, network_input=input_img,
@@ -520,7 +530,7 @@ class EnsemblePredictor(NetworkPredictorBase):
     def from_model_config(cls, networks: List[NetworkBase], mcs: List[ModelConfiguration],
                           tta_aug: ttach.Compose = None):
         return cls(networks=networks, processing_settings=[mc.preprocessing_settings for mc in mcs], tta_aug=tta_aug,
-                   output_sizes=[mc.network_settings.add_number_of_heads + 1 for mc in mcs])
+                   output_sizes=[mc.head_config()[0] + 1 for mc in mcs])
 
     def __init__(self, networks: List[NetworkBase], processing_settings: List[ProcessingSettings],
                  tta_aug: ttach.Compose = None, output_sizes: List[int]=None):
@@ -547,7 +557,7 @@ class EnsemblePredictor(NetworkPredictorBase):
             prediction = network.predict(input_img, self.tta_aug, output_size=output_size)
             other = None
             if isinstance(prediction, (tuple, list)):
-                other = prediction[1:] if len(prediction) > 1 else None
+                other = list(prediction[1]) if len(prediction) > 1 else None
                 prediction = prediction[0]
             single_network_prediction_result.append(PredictionResult(
                 source_image=img,

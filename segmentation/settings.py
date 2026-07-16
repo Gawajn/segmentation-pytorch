@@ -37,6 +37,9 @@ class CustomModelSettings(DataClassJSONMixin):
     weight_sharing: bool = True
     scaled_image_input: bool = False
 
+    add_number_of_heads: int = 0
+    add_classes: List[int] = field(default_factory=list)
+
     def get_kwargs(self):
         return {
             "in_channels": self.channels_in,
@@ -54,6 +57,8 @@ class CustomModelSettings(DataClassJSONMixin):
             "attention_encoder_depth": self.attention_encoder_depth,
             "weight_sharing": self.weight_sharing,
             "scaled_images_input": self.scaled_image_input,
+            "add_number_of_heads": self.add_number_of_heads,
+            "add_classes": self.add_classes,
         }
 
 
@@ -156,6 +161,13 @@ class ModelConfiguration(DataClassJSONMixin):
     custom_model_settings: Optional[CustomModelSettings]
     color_map: ColorMap
     preprocessing_settings: ProcessingSettings
+    additional_color_maps: Optional[List[ColorMap]] = None
+
+    def head_config(self) -> Tuple[int, List[int]]:
+        settings = self.custom_model_settings if self.use_custom_model else self.network_settings
+        number_of_heads = getattr(settings, "add_number_of_heads", 0) or 0
+        add_classes = getattr(settings, "add_classes", None) or []
+        return number_of_heads, list(add_classes)
 
 
 @dataclass

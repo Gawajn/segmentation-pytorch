@@ -101,10 +101,22 @@ class UpConv_woskip(nn.Module):
         return x
 
 
+def build_additional_heads(add_number_of_heads, add_classes, in_channels, kernel_size, padding, stride):
+    if not add_number_of_heads or add_number_of_heads <= 0:
+        return None
+    add_classes = add_classes or []
+    assert len(add_classes) == add_number_of_heads, \
+        "Length of add_classes must match add_number_of_heads"
+    return nn.ModuleList([nn.Conv2d(in_channels, c, kernel_size, padding, stride) for c in add_classes])
+
+
 class UNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=16, n_class=10, kernel_size=3, padding=1, stride=1, activation=None,
-                 depth=3, encoder_filter=None, decoder_filter=None):
+                 depth=3, encoder_filter=None, decoder_filter=None, add_number_of_heads=0, add_classes=None,
+                 encoder_depth=None, **kwargs):
         super(UNet, self).__init__()
+        if encoder_depth is not None:
+            depth = encoder_depth
         if encoder_filter is None:
             encoder_filter = [16, 32, 64, 128]
         if decoder_filter is None:
@@ -127,6 +139,8 @@ class UNet(nn.Module):
         #                          kernel_size, padding, stride))
         if activation is not None:
             self.out = nn.Conv2d(out_channels, n_class, kernel_size, padding, stride)
+        self.add_heads = build_additional_heads(add_number_of_heads, add_classes, out_channels,
+                                                kernel_size, padding, stride)
 
     def forward(self, x):
         # Encoder
@@ -146,6 +160,8 @@ class UNet(nn.Module):
         else:
             x_out = res_u[-1]
             #x_out = self.out(res_u[-1])
+        if self.add_heads is not None:
+            return x_out, [head(res_u[-1]) for head in self.add_heads]
         return x_out
 
 
@@ -179,7 +195,8 @@ class AttentionUnet(nn.Module):
     def __init__(self, in_channels=3, out_channels=16, n_class=10, kernel_size=3, padding=1, stride=1, attention=True,
                  encoder_depth=3, attention_depth=3, attention_encoder_depth=3, encoder_filter=None,
                  decoder_filter=None,
-                 attention_encoder_filter=None, weight_sharing=True, scaled_images_input=False):
+                 attention_encoder_filter=None, weight_sharing=True, scaled_images_input=False,
+                 add_number_of_heads=0, add_classes=None, **kwargs):
         super().__init__()
         self.weigth_sharing = weight_sharing
         self.attention = attention
@@ -215,6 +232,8 @@ class AttentionUnet(nn.Module):
                            encoder_filter=encoder_filter, decoder_filter=decoder_filter)
             if attention or scaled_images_input:
                 self.out = nn.Conv2d(out_channels, n_class, kernel_size, padding, stride)
+        self.add_heads = build_additional_heads(add_number_of_heads, add_classes, out_channels,
+                                                kernel_size, padding, stride)
 
 
     def forward(self, x):
@@ -262,6 +281,7 @@ class AttentionUnet(nn.Module):
                     else:
                         res += x * m[ind]
                 x_out = res
+            features = x_out
             x_out = self.out(x_out)
         elif self.scaled_images_input:
             resized_images = [x]
@@ -282,9 +302,13 @@ class AttentionUnet(nn.Module):
                 else:
                     res += x
             x_out = res
+            features = x_out
             x_out = self.out(x_out)
         else:
             x_out = self.m1(x)
+            features = x_out
+        if self.add_heads is not None:
+            return x_out, [head(features) for head in self.add_heads]
         return x_out
 
 

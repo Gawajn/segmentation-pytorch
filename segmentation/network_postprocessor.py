@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import PIL
 import PIL.Image
@@ -62,30 +62,45 @@ class NetworkBaselinePostProcessor:
 class MaskPredictionResult:
     prediction_result: PredictionResult
     generated_mask: PIL.Image
+    additional_generated_masks: Optional[List[PIL.Image.Image]] = None
 
 
 class NetworkMaskPostProcessor:
     @classmethod
     def from_single_predictor(cls, predictor: NetworkPredictor, mc: ModelConfiguration):
-        return cls(predictor, mc.color_map)
+        return cls(predictor, mc.color_map, additional_color_maps=getattr(mc, "additional_color_maps", None))
 
-    def __init__(self, predictor: NetworkPredictorBase, color_map: ColorMap = None):
+    def __init__(self, predictor: NetworkPredictorBase, color_map: ColorMap = None,
+                 additional_color_maps: Optional[List[ColorMap]] = None):
         self.predictor = predictor
         self.color_map = color_map
+        self.additional_color_maps = additional_color_maps
+
+    @staticmethod
+    def probability_map_to_pil(probability_map: np.ndarray, color_map: ColorMap, img: SourceImage,
+                               keep_dim: bool) -> PIL.Image.Image:
+        lmap = np.argmax(probability_map, axis=-1)
+        mask = NewImageReconstructor.label_to_colors(lmap, color_map)
+
+        outimg = PIL.Image.fromarray(mask, mode="RGB")
+
+        if keep_dim:
+            return outimg.resize(size=(img.get_width(), img.get_height()), resample=PIL.Image.NEAREST)
+        return outimg
 
     def predict_image(self, img: SourceImage, keep_dim: bool = True) -> PIL.Image:
         res = self.predictor.predict_image(img)
 
         # create labeled image from probability map
-        lmap = np.argmax(res.probability_map, axis=-1)
-        mask = NewImageReconstructor.label_to_colors(lmap, self.color_map)
+        mask = self.probability_map_to_pil(res.probability_map, self.color_map, img, keep_dim)
 
-        outimg = PIL.Image.fromarray(mask, mode="RGB")
+        additional_masks = None
+        if res.other_probability_map and self.additional_color_maps:
+            additional_masks = [
+                self.probability_map_to_pil(pmap, cmap, img, keep_dim)
+                for pmap, cmap in zip(res.other_probability_map, self.additional_color_maps)
+            ]
 
-        if keep_dim:
-            mask = outimg.resize(size=(img.get_width(), img.get_height()), resample=PIL.Image.NEAREST)
-        else:
-            mask = outimg
-
-        mpr = MaskPredictionResult(prediction_result=res, generated_mask=mask)
+        mpr = MaskPredictionResult(prediction_result=res, generated_mask=mask,
+                                   additional_generated_masks=additional_masks)
         return mpr

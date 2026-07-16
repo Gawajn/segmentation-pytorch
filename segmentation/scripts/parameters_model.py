@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import albumentations
 import numpy as np
@@ -10,7 +10,7 @@ from albumentations.pytorch import ToTensorV2
 from segmentation.callback import ModelWriterCallback, EarlyStoppingCallback
 from segmentation.losses import Losses
 from segmentation.metrics import Metrics, MetricReduction
-from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad, load_weights_into
+from segmentation.model_builder import ModelBuilderMeta, ModelBuilderLoad
 from segmentation.network import NetworkTrainer, Network
 from segmentation.preprocessing.workflow import PreprocessingTransforms, GrayToRGBTransform, ColorMapTransform, \
     NetworkEncoderTransform, BinarizeGauss, BinarizeDoxapy
@@ -90,18 +90,6 @@ def parse_arguments():
     parser.add_argument("--color_map", type=str, required=False,
                         help="path to color map to load")
     parser.add_argument("--mode", choices=["xml_baseline", "xml_region", "mask"], required=True)
-
-    # Additional heads (multi-task): repeat each flag once per additional head
-    parser.add_argument("--additional_color_map", type=str, action="append", default=None,
-                        help="Path to a color map JSON for an additional head. "
-                             "Repeat the flag once per additional head")
-    parser.add_argument("--additional_train_mask", type=dir_path, nargs="+", action="append", default=None,
-                        help="Folder(s) containing train masks of an additional head, matched to the "
-                             "train images by filename; images without a matching mask are trained with "
-                             "that head's loss skipped. Repeat the flag once per additional head")
-    parser.add_argument("--additional_test_mask", type=dir_path, nargs="+", action="append", default=None,
-                        help="Folder(s) containing test masks of an additional head. "
-                             "Repeat the flag once per additional head")
 
     # Generic
     parser.add_argument('--batch_accumulation', default=NetworkTrainSettings.batch_accumulation, type=int)
@@ -199,19 +187,15 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def get_predefinedNetworkSettings(args, color_map: ColorMap, additional_color_maps: List[ColorMap] = None):
-    additional_color_maps = additional_color_maps or []
+def get_predefinedNetworkSettings(args, color_map: ColorMap):
     return PredefinedNetworkSettings(architecture=Architecture(args.predefined_architecture),
                                      encoder=args.predefined_encoder,
                                      classes=len(color_map),
                                      encoder_depth=args.predefined_encoder_depth,
-                                     decoder_channel=args.predefined_decoder_channel,
-                                     add_number_of_heads=len(additional_color_maps),
-                                     add_classes=[len(cm) for cm in additional_color_maps])
+                                     decoder_channel=args.predefined_decoder_channel)
 
 
-def get_custom_model_settings(args, color_map: ColorMap, additional_color_maps: List[ColorMap] = None) -> CustomModelSettings:
-    additional_color_maps = additional_color_maps or []
+def get_custom_model_settings(args, color_map: ColorMap) -> CustomModelSettings:
     return CustomModelSettings(
         encoder_filter=args.custom_model_encoder_filter,
         decoder_filter=args.custom_model_decoder_filter,
@@ -226,14 +210,11 @@ def get_custom_model_settings(args, color_map: ColorMap, additional_color_maps: 
         kernel_size=args.custom_model_kernel_size,
         weight_sharing=False if args.custom_model_no_weight_sharing else True,
         scaled_image_input=args.custom_model_scaled_image_input,
-        add_number_of_heads=len(additional_color_maps),
-        add_classes=[len(cm) for cm in additional_color_maps],
     )
 
 
 
-def build_model_from_args(args, color_map: ColorMap,
-                          additional_color_maps: List[ColorMap] = None) -> Tuple[Network, ModelConfiguration]:
+def build_model_from_args(args, color_map: ColorMap) -> Tuple[Network, ModelConfiguration]:
     def remove_nones(x):
         return [y for y in x if y is not None]
 
@@ -258,16 +239,16 @@ def build_model_from_args(args, color_map: ColorMap,
         return result
 
     input_transforms = albumentations.Compose(remove_nones([
-        GrayToRGBTransform(p=1.0) if True else None,
-        ColorMapTransform(p=1.0, color_map=color_map.to_albumentation_color_map())
+        GrayToRGBTransform() if True else None,
+        ColorMapTransform(color_map=color_map.to_albumentation_color_map())
 
     ]))
     aug_transforms = default_transform()
     tta_transforms = None
     post_transforms = albumentations.Compose(remove_nones([
         NetworkEncoderTransform(
-            args.predefined_encoder if not args.custom_model else Preprocessingfunction.name, p=1.0),
-        ToTensorV2(p=1.0)
+            args.predefined_encoder if not args.custom_model else Preprocessingfunction.name),
+        ToTensorV2()
     ]))
     transforms = PreprocessingTransforms(
         input_transform=input_transforms,
@@ -278,19 +259,16 @@ def build_model_from_args(args, color_map: ColorMap,
 
     config = ModelConfiguration(use_custom_model=args.custom_model,
                                 network_settings=get_predefinedNetworkSettings(
-                                    args, color_map=color_map,
-                                    additional_color_maps=additional_color_maps) if not args.custom_model else None,
+                                    args, color_map=color_map) if not args.custom_model else None,
                                 custom_model_settings=get_custom_model_settings(
-                                    args, color_map=color_map,
-                                    additional_color_maps=additional_color_maps) if args.custom_model else None,
+                                    args, color_map=color_map) if args.custom_model else None,
                                 preprocessing_settings=ProcessingSettings(transforms=transforms.to_dict(),
                                                                           input_padding_value=args.padding_value,
                                                                           rgb=True,
                                                                           scale_max_area=args.scale_area,
                                                                           preprocessing=Preprocessingfunction(
                                                                               args.predefined_encoder if not args.custom_model else Preprocessingfunction.name)),
-                                color_map=color_map,
-                                additional_color_maps=additional_color_maps if additional_color_maps else None)
+                                color_map=color_map)
 
     network = ModelBuilderMeta(config, args.device).get_model()
 
@@ -308,24 +286,15 @@ def train_arg(train, test, args, network: Network, config: ModelConfiguration, m
               color_map: ColorMap, model_prefix="") -> Tuple[ModelWriterCallback, PreprocessingTransforms]:
     transforms = PreprocessingTransforms.from_dict(network.proc_settings.transforms)
 
-    additional_heads, additional_classes = config.head_config()
-    additional_color_maps = getattr(config, "additional_color_maps", None)
-    if additional_heads > 0:
-        transforms.register_additional_targets([f"mask_head_{i}" for i in range(additional_heads)])
-
     if args.mode == "xml_region" or args.mode == "xml_baseline":
         dt = XMLDataset(train, transforms=transforms.get_train_transforms(),
-                        mask_generator=MaskGenerator(settings=mask_settings),
-                        additional_color_maps=additional_color_maps)
+                        mask_generator=MaskGenerator(settings=mask_settings))
         d_test = XMLDataset(test, transforms=transforms.get_test_transforms(),
-                            mask_generator=MaskGenerator(settings=mask_settings),
-                            additional_color_maps=additional_color_maps)
+                            mask_generator=MaskGenerator(settings=mask_settings))
 
     else:
-        dt = MaskDataset(train, transforms=transforms.get_train_transforms(), scale_area=args.scale_area,
-                         additional_color_maps=additional_color_maps)
-        d_test = MaskDataset(test, transforms=transforms.get_test_transforms(), scale_area=args.scale_area,
-                             additional_color_maps=additional_color_maps)
+        dt = MaskDataset(train, transforms=transforms.get_train_transforms(), scale_area=args.scale_area)
+        d_test = MaskDataset(test, transforms=transforms.get_test_transforms(), scale_area=args.scale_area)
 
     train_loader = DataLoader(dataset=dt, batch_size=1, num_workers=args.processes, shuffle=True)
     val_loader = DataLoader(dataset=d_test, batch_size=1, num_workers=args.processes, shuffle=False)
@@ -347,8 +316,8 @@ def train_arg(train, test, args, network: Network, config: ModelConfiguration, m
                                                            watcher_metric_index=args.metrics_watcher_index,
                                                            class_weights=args.metrics_weights,
                                                            loss=Losses(args.loss),
-                                                           additional_heads=additional_heads,
-                                                           additional_classes=additional_classes,
+                                                           additional_heads=config.head_config()[0],
+                                                           additional_classes=config.head_config()[1],
                                                            ), args.device,
                              callbacks=callbacks, debug_color_map=config.color_map)
 
@@ -358,16 +327,8 @@ def train_arg(train, test, args, network: Network, config: ModelConfiguration, m
 
 def main():
     args = parse_arguments()
-
-    additional_color_maps = [color_map_load_helper(Path(p)) for p in (args.additional_color_map or [])]
-    for flag_name, mask_dirs in [("--additional_train_mask", args.additional_train_mask),
-                                 ("--additional_test_mask", args.additional_test_mask)]:
-        if mask_dirs and len(mask_dirs) != len(additional_color_maps):
-            raise ValueError(f"Got {len(mask_dirs)}x {flag_name} but {len(additional_color_maps)}x "
-                             f"--additional_color_map; repeat each flag once per additional head")
-
-    train = dirs_to_pandaframe(args.train_input, args.train_mask, additional_masks_dirs=args.additional_train_mask)
-    test = dirs_to_pandaframe(args.test_input, args.test_mask, additional_masks_dirs=args.additional_test_mask)
+    train = dirs_to_pandaframe(args.train_input, args.train_mask)
+    test = dirs_to_pandaframe(args.test_input, args.test_mask)
     device = args.device
 
     if len(test) == 0:
@@ -390,12 +351,8 @@ def main():
         network, config = build_model_from_loaded(args)
 
     else:
-        network, config = build_model_from_args(args, color_map=color_map,
-                                                additional_color_maps=additional_color_maps)
-        if args.load:
-            # warm-start: build the (possibly multi-head) architecture from the CLI arguments and
-            # load all compatible weights from the checkpoint; new heads stay randomly initialized
-            load_weights_into(network, args.load, args.device)
+        network, config = build_model_from_args(args, color_map=color_map)
+        from segmentation.datasets.dataset import default_transform
 
     model_writers = []
     test_transforms = []
@@ -415,42 +372,6 @@ def main():
         model_writers.append(mw)
         test_transforms.append(tt)
 
-    if args.eval:
-        total_accuracy = 0
-        total_loss = 0
-        if not args.eval_images:
-            total_accuracy = float(np.mean([mw.stats[mw.metric_watcher_index].value() for mw in model_writers]))
-            total_loss = float(np.mean([mw.best_loss for mw in model_writers]))
-
-        elif args.eval_images:
-            total_accuracy = 0
-            total_loss = 0
-            for ind, (mw, tt) in enumerate(model_writers):
-                mw: ModelWriterCallback = mw
-                tt: PreprocessingTransforms = tt
-                ml = ModelBuilderLoad.from_disk(mw.get_best_model_path(), device=device).get_model()
-                eval_df = dirs_to_pandaframe(args.eval_input, args.eval_mask)
-                if args.mode == "xml_region" or args.mode == "xml_baseline":
-                    d_eval = XMLDataset(eval_df, transforms=tt.get_test_transforms(), scale_area=args.scale_area,
-                                        mask_generator=MaskGenerator(settings=mask_settings))
-
-                else:
-                    d_eval = MaskDataset(eval_df, transforms=tt.get_test_transforms(),
-                                         scale_area=args.scale_area)
-                eval_loader = DataLoader(dataset=d_eval, batch_size=1)
-
-                from segmentation.network import test as test_network
-                accuracy, loss = test_network(ml.model, device, eval_loader, Losses(args.loss).get_loss()() if Losses(
-                    args.loss) == Losses.cross_entropy_loss else Losses(args.loss).get_loss()(mode="multiclass"),
-                                              classes=len(color_map),
-                                              metrics=[Metrics(x) for x in args.metrics],
-                                              metric_reduction=MetricReduction(args.metrics_reduction),
-                                              metric_watcher_index=args.metrics_watcher_index,
-                                              class_weights=args.metrics_weights,
-                                              padding_value=args.padding_value)
-                total_accuracy += accuracy.stats[args.metrics_watcher_index].value()
-                total_loss += loss
-        print("EXPERIMENT_OUT=" + str(total_accuracy / len(model_writers)) + "," + str(total_loss / len(model_writers)))
 
 
 if __name__ == "__main__":

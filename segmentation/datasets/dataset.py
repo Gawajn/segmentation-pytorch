@@ -115,25 +115,63 @@ def default_preprocessing(x):
 #     result = compose([post_transforms()])(**result)
 #     return result["image"], result["mask"]"
 
+def additional_mask_columns(df) -> List[str]:
+    columns = []
+    i = 0
+    while f'add_mask_{i}' in df.columns:
+        columns.append(f'add_mask_{i}')
+        i += 1
+    # legacy single additional mask column, surfaced as head 0
+    if not columns and 'add_symbols_mask' in df.columns:
+        columns.append('add_symbols_mask')
+    return columns
+
+
 def extract_data_from_pd(df, item):
     image_id, mask_id = df.get('images')[item], df.get('masks')[item]
-    mask2_id = None
-    try:
-        mask2_id = df.get('add_symbols_mask')[item]
-    except:
-        pass
-    return image_id, mask_id, mask2_id
+    additional_masks = []
+    for column in additional_mask_columns(df):
+        value = df.get(column)[item]
+        if isinstance(value, float) and math.isnan(value):
+            value = None
+        additional_masks.append(value)
+    return image_id, mask_id, additional_masks
+
+
+def label_encode_additional_mask(mask: np.ndarray, head_index: int, additional_color_maps) -> np.ndarray:
+    """Decode a color mask of an additional head to a label map using the head's own color map.
+    Already label-encoded (2d) masks are passed through unchanged."""
+    if mask.ndim == 3:
+        color_map = None
+        if additional_color_maps is not None and head_index < len(additional_color_maps):
+            color_map = additional_color_maps[head_index]
+        if color_map is None:
+            raise RuntimeError(f"Additional mask for head {head_index} is a color image, "
+                               f"but no additional color map was provided")
+        return color_to_label(mask, color_map)
+    return mask
+
+
+def additional_masks_from_transformed(transformed, additional_ids) -> List[torch.Tensor]:
+    """Per-head target list for a sample; a zero-size tensor marks 'label not available'."""
+    result = []
+    for i in range(len(additional_ids)):
+        value = transformed.get(f"mask_head_{i}")
+        result.append(value if value is not None else torch.zeros(0))
+    return result
 
 class MaskDataset(Dataset):
-    def __init__(self, df, transforms: PreprocessingTransforms = None, scale_area=1000000):
+    def __init__(self, df, transforms: PreprocessingTransforms = None, scale_area=1000000,
+                 additional_color_maps: List = None):
         self.df = df
         self.transforms = transforms
         self.index = self.df.index.tolist()
         self.scale_area = scale_area
+        self.additional_color_maps = additional_color_maps
 
 
     def __getitem__(self, item, apply_preprocessing=True):
-        image_id, mask_id = self.df.get('images')[item], self.df.get('masks')[item]
+        image_id, mask_id, additional_ids = extract_data_from_pd(self.df, item)
 
         image = Image.open(image_id)
         mask = Image.open(mask_id)
@@ -144,7 +182,18 @@ class MaskDataset(Dataset):
         if image.dtype == bool:
             image = image.astype("uint8") * 255
 
-        transformed = self.transforms.transform_train(image, mask)
+        extra_masks = {}
+        for i, additional_id in enumerate(additional_ids):
+            if additional_id is None:
+                continue
+            additional_mask = np.array(rescale_pil(Image.open(additional_id), rescale_factor, 0))
+            extra_masks[f"mask_head_{i}"] = label_encode_additional_mask(additional_mask, i,
+                                                                         self.additional_color_maps)
+
+        transformed = self.transforms.transform_train(image, mask, extra_masks=extra_masks)
+        if additional_ids:
+            return transformed["image"], transformed["mask"], \
+                   additional_masks_from_transformed(transformed, additional_ids), torch.tensor(item)
         return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
@@ -153,14 +202,15 @@ class MaskDataset(Dataset):
 
 class MemoryDataset(Dataset):
     def __init__(self, df, transforms: PreprocessingTransforms = None,
-                 scale_area=1000000):
+                 scale_area=1000000, additional_color_maps: List = None):
         self.df = df
         self.index = self.df.index.tolist()
         self.transforms = transforms
         self.scale_area = scale_area
+        self.additional_color_maps = additional_color_maps
 
     def __getitem__(self, item, apply_preprocessing=True):
-        image_id, mask_id, mask_id2 = extract_data_from_pd(self.df, item)
+        image_id, mask_id, additional_ids = extract_data_from_pd(self.df, item)
 
         image = image_id
         mask = mask_id
@@ -170,15 +220,18 @@ class MemoryDataset(Dataset):
         if image.dtype == bool:
             image = image.astype("uint8") * 255
 
-        if mask_id2 is not None:
-            transformed = self.transforms.transform_train(image, mask, mask2=mask_id2)
-            # show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
+        extra_masks = {}
+        for i, additional_mask in enumerate(additional_ids):
+            if additional_mask is None:
+                continue
+            extra_masks[f"mask_head_{i}"] = label_encode_additional_mask(np.asarray(additional_mask), i,
+                                                                         self.additional_color_maps)
 
-            return transformed["image"], transformed["mask"], transformed["add_symbols_mask"], torch.tensor(item)
-
-        else:
-            transformed = self.transforms.transform_train(image, mask)
-            return transformed["image"], transformed["mask"],  torch.tensor(item)
+        transformed = self.transforms.transform_train(image, mask, extra_masks=extra_masks)
+        if additional_ids:
+            return transformed["image"], transformed["mask"], \
+                   additional_masks_from_transformed(transformed, additional_ids), torch.tensor(item)
+        return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
@@ -186,15 +239,17 @@ class MemoryDataset(Dataset):
 
 class XMLDataset(Dataset):
     def __init__(self, df, mask_generator: BaseMaskGenerator,
-                 transforms: PreprocessingTransforms = None, scale_area=1000000):
+                 transforms: PreprocessingTransforms = None, scale_area=1000000,
+                 additional_color_maps: List = None):
         self.df = df
         self.transforms = transforms
         self.index = self.df.index.tolist()
         self.mask_generator = mask_generator
         self.scale_area = scale_area
+        self.additional_color_maps = additional_color_maps
 
     def __getitem__(self, item, apply_preprocessing=True):
-        image_id, mask_id, mask_id2 = extract_data_from_pd(self.df, item)
+        image_id, mask_id, additional_ids = extract_data_from_pd(self.df, item)
 
         image = Image.open(image_id)
         rescale_factor = get_rescale_factor(image, scale_area=self.scale_area)
@@ -202,26 +257,26 @@ class XMLDataset(Dataset):
         mask = self.mask_generator.get_mask(mask_id, rescale_factor)
 
         image = np.array(rescale_pil(image, rescale_factor, 1))
-        #from  matplotlib import pyplot as plt
-        #fix, ax = plt.subplots(1, 2, True, True)
-        #ax[0].imshow(mask)
-        #ax[1].imshow(image)
-        #plt.show()
         if image.dtype == bool:
             image = image.astype("uint8") * 255
-        if mask_id2 is not None:
-            mask2 = self.mask_generator.get_mask(mask_id2, rescale_factor)
-            transformed = self.transforms.transform_train(image, mask, mask2=mask2)
-            # show_images([image,transformed["image"].cpu().numpy().transpose([1,2,0])],["Original","Augmented"])
 
-            return transformed["image"], transformed["mask"], transformed["add_symbols_mask"], torch.tensor(item)
+        extra_masks = {}
+        for i, additional_id in enumerate(additional_ids):
+            if additional_id is None:
+                continue
+            # additional masks are either xml files (rendered by the mask generator) or mask images
+            if str(additional_id).endswith(".xml"):
+                additional_mask = np.asarray(self.mask_generator.get_mask(additional_id, rescale_factor))
+            else:
+                additional_mask = np.array(rescale_pil(Image.open(additional_id), rescale_factor, 0))
+            extra_masks[f"mask_head_{i}"] = label_encode_additional_mask(additional_mask, i,
+                                                                         self.additional_color_maps)
 
-        else:
-            transformed = self.transforms.transform_train(image, mask)
-            return transformed["image"], transformed["mask"],  torch.tensor(item)
-
-        # TODO: switch between modes based on parameter
-
+        transformed = self.transforms.transform_train(image, mask, extra_masks=extra_masks)
+        if additional_ids:
+            return transformed["image"], transformed["mask"], \
+                   additional_masks_from_transformed(transformed, additional_ids), torch.tensor(item)
+        return transformed["image"], transformed["mask"], torch.tensor(item)
 
     def __len__(self):
         return len(self.index)
@@ -263,20 +318,25 @@ def listdir(dir, postfix="", not_postfix=False):
         return [os.path.join(dir, f) for f in sorted(os.listdir(dir)) if f.endswith(postfix)]
 
 
-def dirs_to_pandaframe(images_dir: List[str], masks_dir: List[str], verify_filenames: bool = True):
+def dirs_to_pandaframe(images_dir: List[str], masks_dir: List[str], verify_filenames: bool = True,
+                       additional_masks_dirs: List[List[str]] = None):
+    """Builds the dataset frame. additional_masks_dirs holds one directory list per additional
+    head; its masks are matched to the images by basename, images without a matching file get
+    None (their head loss is skipped during training)."""
     img = []
     m = []
     for img_d, mask_d in zip(images_dir, masks_dir):
         img += listdir(img_d)
         m += listdir(mask_d)
+
+    def filenames(fn, postfix=None):
+        if postfix and len(postfix) > 0:
+            fn = [f[:-len(postfix)] if f.endswith(postfix) else f for f in fn]
+
+        x = {os.path.basename(f).split('.')[0]: f for f in fn}
+        return x
+
     if verify_filenames:
-        def filenames(fn, postfix=None):
-            if postfix and len(postfix) > 0:
-                fn = [f[:-len(postfix)] if f.endswith(postfix) else f for f in fn]
-
-            x = {os.path.basename(f).split('.')[0]: f for f in fn}
-            return x
-
         img_dir = filenames(img)
         mask_dir = filenames(m)
         base_names = sorted(set(img_dir.keys()).intersection(set(mask_dir.keys())))
@@ -284,9 +344,16 @@ def dirs_to_pandaframe(images_dir: List[str], masks_dir: List[str], verify_filen
         img = [img_dir.get(basename) for basename in base_names]
         m = [mask_dir.get(basename) for basename in base_names]
 
-    else:
-        base_names = None
-    df = pd.DataFrame(data={'images': img, 'masks': m, 'add_symbols_mask': m})
+    data = {'images': img, 'masks': m}
+    if additional_masks_dirs:
+        base_names = [os.path.basename(f).split('.')[0] for f in img]
+        for i, head_dirs in enumerate(additional_masks_dirs):
+            files = []
+            for d in head_dirs:
+                files += listdir(str(d))
+            lookup = filenames(files)
+            data[f'add_mask_{i}'] = [lookup.get(basename) for basename in base_names]
+    df = pd.DataFrame(data=data)
 
     return df
 

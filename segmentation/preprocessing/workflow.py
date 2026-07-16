@@ -46,8 +46,12 @@ class PreprocessingTransforms:
             "post_transforms": albu.to_dict(self.post_transforms) if self.post_transforms else None
         }
 
-    def transform_train(self, image, mask, mask2=None) -> Dict:
-        res = {"image": image, "mask": mask, "add_symbols_mask": mask2}
+    def transform_train(self, image, mask, mask2=None, extra_masks: Optional[Dict[str, Any]] = None) -> Dict:
+        res = {"image": image, "mask": mask}
+        if mask2 is not None:  # legacy single additional mask, treated as head 0
+            res["mask_head_0"] = mask2
+        if extra_masks:
+            res.update({k: v for k, v in extra_masks.items() if v is not None})
         if self.input_transform:
             res = self.input_transform(**res)
         if self.aug_transform:
@@ -55,6 +59,14 @@ class PreprocessingTransforms:
         if self.post_transforms:
             res = self.post_transforms(**res)
         return res
+
+    def register_additional_targets(self, names: List[str]):
+        """Register additional mask targets (e.g. mask_head_0) on all composes. Albumentations
+        does not serialize additional_targets, so this must be called after from_dict."""
+        targets = {name: "mask" for name in names}
+        for transform in [self.input_transform, self.aug_transform, self.tta_transform, self.post_transforms]:
+            if transform is not None:
+                transform.add_targets(targets)
 
     def transform_predict(self, image) -> Dict:
         res = {"image": image}
@@ -111,7 +123,8 @@ import albumentations.core.transforms_interface
 class ColorMapTransform(albu.core.transforms_interface.BasicTransform):
     def __init__(self, color_map: Dict[int, Tuple[int]], **params):
         super().__init__(**params)
-        self.color_map = color_map
+        # JSON serialization of the model configuration turns the integer labels into strings
+        self.color_map = {int(label): color for label, color in color_map.items()} if color_map else color_map
 
     def color_to_label(self, mask):
         out = np.zeros(mask.shape[0:2], dtype=np.int32)

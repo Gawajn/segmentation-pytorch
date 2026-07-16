@@ -1,11 +1,61 @@
 import abc
+import re
 from pathlib import Path
-from typing import Union
+from typing import Dict, Union
 
+import loguru
 import torch
 
 from segmentation.network import Network
 from segmentation.settings import CustomModelSettings, PredefinedNetworkSettings, ModelConfiguration, ModelFile, ProcessingSettings
+
+# state_dict keys belonging to additional heads: MultiHeadNetwork registers them as
+# head_{i}.*, the custom models as add_heads.{i}.*
+ADDITIONAL_HEAD_KEY = re.compile(r"^(head_\d+\.|add_heads\.)")
+
+
+def is_additional_head_key(key: str) -> bool:
+    return bool(ADDITIONAL_HEAD_KEY.match(key))
+
+
+def adapt_state_dict_keys(state_dict: Dict[str, torch.Tensor], model: torch.nn.Module) -> Dict[str, torch.Tensor]:
+    """Remap checkpoint keys between plain models and MultiHeadNetwork-wrapped models.
+
+    Wrapping a plain smp model in MultiHeadNetwork prefixes its keys with 'model.'.
+    """
+    from segmentation.multi_head_network import MultiHeadNetwork
+    target_is_wrapped = isinstance(model, MultiHeadNetwork)
+    state_is_wrapped = any(k.startswith("model.") for k in state_dict)
+    if target_is_wrapped and not state_is_wrapped:
+        return {k if is_additional_head_key(k) else f"model.{k}": v for k, v in state_dict.items()}
+    if not target_is_wrapped and state_is_wrapped:
+        return {k[len("model."):]: v for k, v in state_dict.items() if k.startswith("model.")}
+    return dict(state_dict)
+
+
+def load_weights_into(network: Network, model_weights: Union[Path, str], device) -> Network:
+    """Warm-start: load all compatible weights from a checkpoint into an already built network.
+
+    Keys are remapped if the head wrapping differs, keys missing from the checkpoint or with
+    mismatching shapes are left at their (random) initialization. Used to fine-tune an old
+    single-head model into a new architecture with additional heads.
+    """
+    state_dict = torch.load(Path(model_weights), map_location=torch.device(device))
+    adapted = adapt_state_dict_keys(state_dict, network.model)
+    model_state = network.model.state_dict()
+    filtered = {}
+    skipped = []
+    for key, value in adapted.items():
+        if key in model_state and model_state[key].shape == value.shape:
+            filtered[key] = value
+        else:
+            skipped.append(key)
+    missing, _ = network.model.load_state_dict(filtered, strict=False)
+    if skipped:
+        loguru.logger.warning(f"Warm-start from {model_weights}: skipped incompatible checkpoint keys: {skipped}")
+    if missing:
+        loguru.logger.info(f"Warm-start from {model_weights}: randomly initialized parameters: {list(missing)}")
+    return network
 
 
 class ModelBuilderBase(abc.ABC):
@@ -91,7 +141,21 @@ class ModelBuilderLoad(ModelBuilderBase):
 
     def get_model(self) -> Network:
         network = ModelBuilderMeta(self.model_file.model_configuration, self.device).get_model()
-        network.model.load_state_dict(torch.load(self.weights_path, map_location=torch.device(self.device)))
+        state_dict = torch.load(self.weights_path, map_location=torch.device(self.device))
+        try:
+            network.model.load_state_dict(state_dict)
+        except RuntimeError:
+            adapted = adapt_state_dict_keys(state_dict, network.model)
+            missing, unexpected = network.model.load_state_dict(adapted, strict=False)
+            missing_non_head = [k for k in missing if not is_additional_head_key(k)]
+            if unexpected or missing_non_head:
+                raise RuntimeError(
+                    f"Checkpoint {self.weights_path} does not match the model built from its configuration. "
+                    f"Missing keys: {missing_non_head}, unexpected keys: {list(unexpected)}")
+            if missing:
+                loguru.logger.warning(
+                    f"Checkpoint {self.weights_path} contains no weights for the additional heads, "
+                    f"they are randomly initialized: {list(missing)}")
         return network
 
     def get_model_configuration(self) -> ModelConfiguration:

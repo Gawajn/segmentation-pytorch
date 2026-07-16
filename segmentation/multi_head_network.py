@@ -40,19 +40,13 @@ class MultiHeadNetwork(torch.nn.Module):
             )
 
     def forward(self, x):
-        add_masks = []
-
         self.check_input_shape(x)
 
         features = self.model.encoder(x)
-        decoder_output = self.model.decoder(*features)
+        decoder_output = self.model.decoder(features)
 
         masks = self.model.segmentation_head(decoder_output)
-        for i in self.heads:
-            add_masks.append(i(decoder_output))
-        if self.model.classification_head is not None:
-            labels = self.model.classification_head(features[-1])
-            return masks, labels, add_masks
+        add_masks = [head(decoder_output) for head in self.heads]
 
         return masks, add_masks
 

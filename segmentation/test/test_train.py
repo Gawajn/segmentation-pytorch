@@ -39,7 +39,7 @@ if __name__ == '__main__':
                 albu.CLAHE()]),
             albu.RandomScale(),
 
-        ], additional_targets={'add_symbols_mask': 'mask'})
+        ], additional_targets={'mask_head_0': 'mask'})
         return result
 
 
@@ -47,14 +47,14 @@ if __name__ == '__main__':
                      ClassSpec(label=1, name="Baseline", color=[255, 0, 0]),
                      ClassSpec(label=2, name="BaselineBorder", color=[0, 255, 0])])
     add_classes = [3]
-    add_number_of_heads = 0
+    add_number_of_heads = 1
     predef = PredefinedNetworkSettings(architecture=Architecture.UNET,
                                        classes=len(cmap), add_number_of_heads=add_number_of_heads, add_classes=add_classes)
 
     input_transforms = albumentations.Compose(remove_nones([
         GrayToRGBTransform() if True else None,
         ColorMapTransform(color_map=cmap.to_albumentation_color_map())
-    ]), additional_targets={'add_symbols_mask': 'mask'} )
+    ]), additional_targets={'mask_head_0': 'mask'} )
 
     aug_transforms = default_transform()
     tta_transforms = None
@@ -62,7 +62,7 @@ if __name__ == '__main__':
     post_transforms = albumentations.Compose(remove_nones([
         NetworkEncoderTransform(predef.encoder),
         ToTensorV2()
-    ]), additional_targets={'add_symbols_mask': 'mask'})
+    ]), additional_targets={'mask_head_0': 'mask'})
 
     transforms = PreprocessingTransforms(
         input_transform=input_transforms,
